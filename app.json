@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "FocusLock",
-    "slug": "FocusLock",
+    "name": "FocusRoom",
+    "slug": "FocusRoom",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "focuslock",
+    "scheme": "focusroom",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.focusRoom",
+      "appleTeamId": "CRW66LT2G4"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,6 +24,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
@@ -38,7 +41,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

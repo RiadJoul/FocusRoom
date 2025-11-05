@@ -1,33 +1,47 @@
+import { FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: '#EA526F',
+        tabBarInactiveTintColor: '#888888',
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        tabBarStyle: {
+          backgroundColor: '#0A0A0A',
+          borderTopColor: '#262626',
+          height: 70,
+          paddingBottom: 10,
+          paddingTop: 10,
+        },
+        animation: 'shift',
+        sceneStyle: {
+          backgroundColor: '#0A0A0A',
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'Tasks',
+          tabBarIcon: ({ color }) => <FontAwesome5 name="tasks" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="focus"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Focus',
+          tabBarIcon: ({ color }) => <FontAwesome5 name="bullseye" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <FontAwesome5 name="user" size={24} color={color} />,
         }}
       />
     </Tabs>
