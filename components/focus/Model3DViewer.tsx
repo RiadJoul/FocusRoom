@@ -1,7 +1,9 @@
+import { Asset } from 'expo-asset';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet } from 'react-native';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three-stdlib';
 
 interface Model3DViewerProps {
   width?: number;
@@ -23,6 +25,8 @@ export function Model3DViewer({
   const meshRef = useRef<THREE.Mesh | THREE.Group | null>(null);
   const timeRef = useRef<number>(0);
   const steamParticlesRef = useRef<THREE.Points | null>(null);
+  const starsRef = useRef<THREE.Points | null>(null);
+  const planetsRef = useRef<THREE.Mesh[]>([]);
   const digitalClockDigitsRef = useRef<THREE.Mesh[][]>([]);
   const timerSecondsRef = useRef<number>(timerSeconds);
 
@@ -48,13 +52,13 @@ export function Model3DViewer({
     });
     
     renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
-    renderer.setClearColor(0xE8EAF6, 1);
+    renderer.setClearColor(0x000000, 1); // Dark space background
     renderer.shadowMap.enabled = false;
     
     rendererRef.current = renderer;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xE8EAF6, 10, 25);
+    scene.fog = new THREE.Fog(0x000000, 20, 50); // Deep space fog
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(
@@ -63,14 +67,14 @@ export function Model3DViewer({
       0.01,
       100
     );
-    camera.position.set(0, 2.5, 4.5);
-    camera.lookAt(0, 0.3, 0);
+    camera.position.set(0, 2.5, 8.5);
+    camera.lookAt(0, 0.3, -4);
     cameraRef.current = camera;
 
-    const ambientLight = new THREE.AmbientLight(0xFFFFFF, 1.5);
+    const ambientLight = new THREE.AmbientLight(0x404060, 0.8); // Dimmer, bluish ambient
     scene.add(ambientLight);
 
-    const hemisphereLight = new THREE.HemisphereLight(0xFFFAF0, 0xB3E5FC, 1.2);
+    const hemisphereLight = new THREE.HemisphereLight(0x6A7BFF, 0xFF6B9D, 0.6); // Space colors
     scene.add(hemisphereLight);
 
     // Add directional light for better definition
@@ -471,7 +475,7 @@ export function Model3DViewer({
 
     // DIGITAL TIMER DISPLAY
     const digitalClockGroup = new THREE.Group();
-    digitalClockGroup.position.set(0, 0.15, -0.5);
+    digitalClockGroup.position.set(0, 0.58, -0.5);
     digitalClockGroup.rotation.x = -Math.PI / 6;
     
     const digitalClockBaseGeometry = new THREE.BoxGeometry(0.7, 0.22, 0.02);
@@ -656,132 +660,197 @@ export function Model3DViewer({
     // CLEAN DESK MAT (subtle, organized)
     const deskMatGeometry = new THREE.BoxGeometry(2.8, 0.006, 2);
     const deskMatMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x49799c
+      color: 0x8F8F8F
     });
     const deskMat = new THREE.Mesh(deskMatGeometry, deskMatMaterial);
     deskMat.position.set(0, 0.058, 0.3);
     deskGroup.add(deskMat);
 
-    // BACK WALL (warm beige)
-    const wallGeometry = new THREE.BoxGeometry(10, 6, 0.1);
-    const wallMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xE8DCC8
-    });
-    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-    wall.position.set(0, 1.5, -2.5);
-    scene.add(wall);
-
-    // SIDE WINDOW (left wall, natural light)
-    const windowFrameGeometry = new THREE.BoxGeometry(1.5, 2, 0.08);
-    const windowFrameMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xD3D3D3
-    });
-    const windowFrame = new THREE.Mesh(windowFrameGeometry, windowFrameMaterial);
-    windowFrame.position.set(1.3, 2, -2.42);
-    scene.add(windowFrame);
-
-    const windowPaneGeometry = new THREE.BoxGeometry(0.7, 0.95, 0.02);
-    const windowPaneMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xE3F2FD,
-      transparent: true,
-      opacity: 0.4
-    });
-    
-    const pane1 = new THREE.Mesh(windowPaneGeometry, windowPaneMaterial);
-    pane1.position.set(1.925, 2.5, -2.45);
-    scene.add(pane1);
-    
-    const pane2 = new THREE.Mesh(windowPaneGeometry, windowPaneMaterial);
-    pane2.position.set(2.675, 2.5, -2.45); 
-    scene.add(pane2);
-    
-    const pane3 = new THREE.Mesh(windowPaneGeometry, windowPaneMaterial);
-    pane3.position.set(1.925, 1.5, -2.45);
-    scene.add(pane3);
-    
-    const pane4 = new THREE.Mesh(windowPaneGeometry, windowPaneMaterial);
-    pane4.position.set(2.675, 1.5, -2.45);
-    scene.add(pane4);
-
-    const horizontalBarGeometry = new THREE.BoxGeometry(1.5, 0.04, 0.03);
-    const barMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xD3D3D3
-    });
-    const horizontalBar = new THREE.Mesh(horizontalBarGeometry, barMaterial);
-    horizontalBar.position.set(1.3, 2, -2.41);
-    scene.add(horizontalBar);
-
-    const verticalBarGeometry = new THREE.BoxGeometry(0.04, 2, 0.03);
-    const verticalBar = new THREE.Mesh(verticalBarGeometry, barMaterial);
-    verticalBar.position.set(1.3, 2, -2.41);
-    scene.add(verticalBar);
-
-    const windowSillGeometry = new THREE.BoxGeometry(1.6, 0.08, 0.15);
-    const windowSillMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xD3D3D3
-    });
-    const windowSill = new THREE.Mesh(windowSillGeometry, windowSillMaterial);
-    windowSill.position.set(1.3, 1, -2.38);
-    scene.add(windowSill);
-
-    // LARGE FRONT WINDOW (bright daylight)
-    const frontWindowFrameGeometry = new THREE.BoxGeometry(7, 3.5, 0.1);
-    const frontWindowFrameMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xD3D3D3
-    });
-    const frontWindowFrame = new THREE.Mesh(frontWindowFrameGeometry, frontWindowFrameMaterial);
-    frontWindowFrame.position.set(0, 2.2, 5.5);
-    scene.add(frontWindowFrame);
-
-    const frontWindowGlassGeometry = new THREE.BoxGeometry(6.6, 3.1, 0.05);
-    const frontWindowGlassMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xE8F4F8,
-      transparent: true,
-      opacity: 0.15
-    });
-    const frontWindowGlass = new THREE.Mesh(frontWindowGlassGeometry, frontWindowGlassMaterial);
-    frontWindowGlass.position.set(0, 2.2, 5.5);
-    scene.add(frontWindowGlass);
-
-    const frontPaneDividerMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xFFFFFF
-    });
-
-    for (let i = 0; i < 2; i++) {
-      const dividerGeometry = new THREE.BoxGeometry(7, 0.08, 0.08);
-      const divider = new THREE.Mesh(dividerGeometry, frontPaneDividerMaterial);
-      divider.position.set(0, 1.2 + i * 2, 5.5);
-      scene.add(divider);
+    // SPACE BACKGROUND
+    // Create starfield
+    const starsGeometry = new THREE.BufferGeometry();
+    const starPositions = [];
+    for (let i = 0; i < 1000; i++) {
+      const x = (Math.random() - 0.5) * 50;
+      const y = (Math.random() - 0.5) * 50;
+      const z = (Math.random() - 0.5) * 50 - 10;
+      starPositions.push(x, y, z);
     }
-
-    for (let i = 0; i < 4; i++) {
-      const dividerGeometry = new THREE.BoxGeometry(0.08, 3.5, 0.08);
-      const divider = new THREE.Mesh(dividerGeometry, frontPaneDividerMaterial);
-      divider.position.set(-2.8 + i * 1.87, 2.2, 5.5);
-      scene.add(divider);
-    }
-
-    // LIGHT WOOD FLOOR
-    const floorGeometry = new THREE.BoxGeometry(15, 0.1, 15);
-    const floorMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xF5F0E8
+    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+    const starsMaterial = new THREE.PointsMaterial({ 
+      color: 0xFFFFFF, 
+      size: 0.05,
+      transparent: true,
+      opacity: 0.8
     });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.position.y = -0.5;
-    scene.add(floor);
+    const stars = new THREE.Points(starsGeometry, starsMaterial);
+    starsRef.current = stars;
+    scene.add(stars);
 
-    // Floor planks
-    for (let i = 0; i < 14; i++) {
-      const plankGeometry = new THREE.BoxGeometry(0.015, 0.002, 15);
-      const plankMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xE8E0D5,
-        transparent: true,
-        opacity: 0.4
+    // Helper function to load GLB models
+    const loadGLBModel = async (modelPath: any): Promise<THREE.Object3D | null> => {
+      try {
+        console.log('Loading GLB model...');
+        // Load asset
+        const asset = Asset.fromModule(modelPath);
+        await asset.downloadAsync();
+        
+        if (!asset.localUri) {
+          console.error('Failed to load asset');
+          return null;
+        }
+
+        console.log('Fetching GLB from:', asset.localUri);
+        // Fetch the GLB file
+        const response = await fetch(asset.localUri);
+        const arrayBuffer = await response.arrayBuffer();
+        
+        console.log('Parsing GLB, size:', arrayBuffer.byteLength);
+        // Parse GLB using GLTFLoader
+        const loader = new GLTFLoader();
+        
+        return new Promise((resolve, reject) => {
+          loader.parse(
+            arrayBuffer,
+            '',
+            (gltf) => {
+              console.log('GLB loaded successfully!', gltf.scene);
+              console.log('Scene children:', gltf.scene.children.length);
+              
+              // Make sure materials are set up for mobile rendering
+              gltf.scene.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                  console.log('Found mesh:', child.name || 'unnamed');
+                  if (child.material) {
+                    // Replace with a simple basic material (even simpler than Lambert)
+                    const newMaterial = new THREE.MeshBasicMaterial({
+                      color: 0xFFFFFF, // White
+                      wireframe: false,
+                    });
+                    child.material = newMaterial;
+                    child.material.needsUpdate = true;
+                    console.log('Replaced material with MeshBasicMaterial (white)');
+                  }
+                }
+              });
+              
+              resolve(gltf.scene);
+            },
+            (error) => {
+              console.error('Error parsing GLB:', error);
+              reject(error);
+            }
+          );
+        });
+      } catch (error) {
+        console.error('Error loading GLB model:', error);
+        return null;
+      }
+    };
+
+    // Function to spawn a random planet occasionally
+    const spawnPlanet = () => {
+      const planetTypes = [
+        { 
+          name: 'Earth-like',
+          size: 0.8, 
+          color: 0x2E5F8F, 
+          emissive: 0x1A3A5F, 
+          intensity: 0.15,
+          roughness: 0.8,
+          metalness: 0.1
+        },
+        { 
+          name: 'Mars',
+          size: 1.2, 
+          color: 0xCD5C3C, 
+          emissive: 0x5C2812, 
+          intensity: 0.2,
+          roughness: 0.9,
+          metalness: 0.0
+        },
+        { 
+          name: 'Jupiter',
+          size: 0.5, 
+          color: 0xC88B3A, 
+          emissive: 0x8B5A2B, 
+          intensity: 0.25,
+          roughness: 0.6,
+          metalness: 0.2
+        },
+        { 
+          name: 'Moon',
+          size: 1.5, 
+          color: 0xB8B8B8, 
+          emissive: 0x4A4A4A, 
+          intensity: 0.15,
+          roughness: 1.0,
+          metalness: 0.0
+        },
+        { 
+          name: 'Venus',
+          size: 1.0, 
+          color: 0xFFC649, 
+          emissive: 0xCC8833, 
+          intensity: 0.3,
+          roughness: 0.7,
+          metalness: 0.1
+        },
+        { 
+          name: 'Neptune',
+          size: 0.3, 
+          color: 0x4169E1, 
+          emissive: 0x2C4C9A, 
+          intensity: 0.2,
+          roughness: 0.5,
+          metalness: 0.3
+        },
+      ];
+
+      const type = planetTypes[Math.floor(Math.random() * planetTypes.length)];
+      
+      // Create procedural sphere planet with better materials
+      const geometry = new THREE.SphereGeometry(type.size, 64, 64);
+      
+      // Use MeshStandardMaterial for more realistic rendering
+      const material = new THREE.MeshStandardMaterial({ 
+        color: type.color,
+        emissive: type.emissive,
+        emissiveIntensity: type.intensity,
+        roughness: type.roughness,
+        metalness: type.metalness,
+        flatShading: false,
       });
-      const plank = new THREE.Mesh(plankGeometry, plankMaterial);
-      plank.position.set(-6.5 + i * 1, -0.44, 0);
-      scene.add(plank);
-    }
+      
+      // Add subtle random color variations to vertices for more realism
+      const colors = [];
+      const positionAttribute = geometry.attributes.position;
+      for (let i = 0; i < positionAttribute.count; i++) {
+        const variation = 0.85 + Math.random() * 0.15; // Random variation 85-100%
+        colors.push(variation, variation, variation);
+      }
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      material.vertexColors = true;
+      
+      const planet = new THREE.Mesh(geometry, material);
+      
+      // Random starting position far away
+      const side = Math.random() > 0.5 ? 1 : -1;
+      planet.position.set(
+        side * (3 + Math.random() * 4), // Random x position
+        -2 + Math.random() * 4, // Random y position
+        -30 - Math.random() * 10 // Start far back
+      );
+      
+      scene.add(planet);
+      planetsRef.current.push(planet);
+    };
+
+    // Spawn initial planets occasionally (every 3-5 minutes)
+    let nextPlanetSpawn = Math.random() * 120000 + 180000; // Random between 3-5 minutes (180000-300000ms)
+    let lastSpawnTime = 0;
+
+    
 
     meshRef.current = deskGroup;
     scene.add(deskGroup);
@@ -826,6 +895,63 @@ export function Model3DViewer({
         updateDigit(digitalClockDigitsRef.current[1], minuteOnes);
         updateDigit(digitalClockDigitsRef.current[2], secondTens);
         updateDigit(digitalClockDigitsRef.current[3], secondOnes);
+      }
+
+      // Animate stars moving towards camera (traveling through space effect)
+      if (starsRef.current) {
+        const positions = starsRef.current.geometry.attributes.position.array as Float32Array;
+        
+        for (let i = 0; i < positions.length / 3; i++) {
+          // Move stars towards camera (positive Z direction)
+          positions[i * 3 + 2] += 0.05;
+          
+          // Reset star position when it passes the camera
+          if (positions[i * 3 + 2] > 10) {
+            positions[i * 3] = (Math.random() - 0.5) * 50;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 50;
+            positions[i * 3 + 2] = -40;
+          }
+        }
+        
+        starsRef.current.geometry.attributes.position.needsUpdate = true;
+      }
+
+      // Move planets towards camera and remove when passed
+      const currentTime = Date.now();
+      if (currentTime - lastSpawnTime > nextPlanetSpawn && planetsRef.current.length < 2) {
+        spawnPlanet();
+        lastSpawnTime = currentTime;
+        nextPlanetSpawn = Math.random() * 120000 + 180000; // Random between 3-5 minutes (180000-300000ms)
+      }
+
+      // Update planet positions
+      for (let i = planetsRef.current.length - 1; i >= 0; i--) {
+        const planet = planetsRef.current[i];
+        planet.position.z += 0.08; // Move towards camera
+        planet.rotation.y += 0.005; // Slow rotation
+        
+        // Remove planet when it passes the camera
+        if (planet.position.z > 15) {
+          sceneRef.current?.remove(planet);
+          
+          // Dispose geometry and materials properly
+          planet.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              if (child.geometry) {
+                child.geometry.dispose();
+              }
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  child.material.forEach(material => material.dispose());
+                } else {
+                  child.material.dispose();
+                }
+              }
+            }
+          });
+          
+          planetsRef.current.splice(i, 1);
+        }
       }
 
       if (meshRef.current) {

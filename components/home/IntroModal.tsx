@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
-    FadeIn,
-    FadeInDown,
-    useAnimatedStyle,
-    useSharedValue,
-    withDelay,
-    withSequence,
-    withTiming
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming
 } from 'react-native-reanimated';
 
 interface IntroModalProps {
@@ -16,14 +16,15 @@ interface IntroModalProps {
 }
 
 const INTRO_ITEMS = [
-  { text: 'Organize the everyday chaos', delay: 800 },
-  { text: 'Focus on the right things', delay: 1500 },
-  { text: 'Achieve goals and finish projects', delay: 2500 },
+  { text: 'Stop procrastinating', delay: 800 },
+  { text: 'Lock in and focus', delay: 1500 },
+  { text: 'Get your shit done', delay: 2500 },
 ];
 
 function IntroItem({ text, delay, index }: { text: string; delay: number; index: number }) {
   const opacity = useSharedValue(1);
   const strikethrough = useSharedValue(0);
+  const [textWidth, setTextWidth] = useState(0);
 
   useEffect(() => {
     // Animate the strikethrough after the delay
@@ -35,7 +36,7 @@ function IntroItem({ text, delay, index }: { text: string; delay: number; index:
 
   const strikethroughStyle = useAnimatedStyle(() => {
     return {
-      width: `${strikethrough.value * 80}%`,
+      width: strikethrough.value * textWidth,
     };
   });
 
@@ -47,13 +48,16 @@ function IntroItem({ text, delay, index }: { text: string; delay: number; index:
       <View className="w-8 h-8 rounded-full bg-primary items-center justify-center mr-3">
         <Text className="text-white font-primary-bold text-base">✓</Text>
       </View>
-      <View className="flex-1 relative">
-        <Text className="text-gray-700 font-primary-medium text-sm">
+      <View className="relative">
+        <Text 
+          className="text-gray-700 font-primary-medium text-sm"
+          onLayout={(e) => setTextWidth(e.nativeEvent.layout.width)}
+        >
           {text}
         </Text>
         <Animated.View 
-          style={[strikethroughStyle]}
-          className="absolute top-1/3 left-0 h-0.5 bg-gray-500"
+          style={[strikethroughStyle, { height: 2 }]}
+          className="absolute top-1/3 left-0 bg-gray-500"
         />
       </View>
     </Animated.View>
@@ -152,7 +156,7 @@ export function IntroModal({ visible, onClose }: IntroModalProps) {
               onPress={onClose}
               disabled={!buttonEnabled}
               className={`py-4 rounded-xl items-center ${
-                buttonEnabled ? 'bg-primary' : 'bg-gray-300'
+                buttonEnabled ? 'bg-black' : 'bg-gray-300'
               }`}
               activeOpacity={0.8}
             >

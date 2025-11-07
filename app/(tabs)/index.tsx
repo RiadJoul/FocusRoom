@@ -130,7 +130,6 @@ export default function HomeScreen() {
           {/* Header Section */}
           <Header
             userName={user?.full_name?.split(' ')[0] || ''}
-            completedCount={completedForSelectedDay}
             selectedDay={selectedDay}
             today={today}
           />
@@ -153,10 +152,10 @@ export default function HomeScreen() {
           {/* Today's Focus Section or Empty State */}
           {loading ? (
             <View className="flex-1 items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#EA526F" />
+              <ActivityIndicator size="large" color="#8F8F8F" />
               <Text className="text-gray-400 font-primary-medium mt-4">Loading tasks...</Text>
             </View>
-          ) : tasksForSelectedDay.length === 0 ? (
+          ) : incompleteTasks.length === 0 ? (
             <EmptyState selectedDay={selectedDay} today={today} />
           ) : (
             <View className="pt-5">

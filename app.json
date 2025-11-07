@@ -11,9 +11,17 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.focusRoom",
-      "appleTeamId": "CRW66LT2G4"
+      "appleTeamId": "CRW66LT2G4",
+      "icon": "./assets/images/icon.png",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.anonymous.focusRoom",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -47,6 +55,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "26e98368-af89-4b11-9acc-f9da6cd930d7"
+      }
     }
   }
 }

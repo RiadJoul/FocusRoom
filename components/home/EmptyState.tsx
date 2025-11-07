@@ -17,8 +17,8 @@ export function EmptyState({ selectedDay, today }: EmptyStateProps) {
       </Text>
       <Text className="text-gray-400 font-primary-medium text-center px-8">
         {isSameDay(selectedDay, today)
-          ? 'Start by adding your first task and take control of your day'
-          : 'Start by adding your first task and take control of that day'}
+          ? 'Ready for liftoff? Add tasks to begin your focus journey to space'
+          : 'Prepare for takeoff! Add tasks to explore the universe on this day'}
       </Text>
       <View className='w-52 h-52 mt-5'>
         <LottieView

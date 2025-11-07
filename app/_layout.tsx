@@ -14,8 +14,10 @@ import { Linking } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
+import { analytics, Events } from '../lib/analytics';
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
+
 
 
 export const unstable_settings = {
@@ -35,6 +37,26 @@ export default function RootLayout() {
 
   const [checking, setChecking] = useState(true);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
+
+  // Initialize Mixpanel
+  useEffect(() => {
+    const initAnalytics = async () => {
+      try {
+        console.log('🚀 Starting Mixpanel initialization...');
+        await analytics.init();
+        console.log('✅ Mixpanel ready, tracking app open');
+        
+        // Print debug info
+        console.log('🔍 Mixpanel Debug Info:', JSON.stringify(analytics.getDebugInfo(), null, 2));
+        
+        await analytics.track(Events.APP_OPENED);
+      } catch (error) {
+        console.error('❌ Failed to initialize analytics:', error);
+      }
+    };
+    
+    initAnalytics();
+  }, []);
 
   useEffect(() => {
     if (initialCheckDone) return; // Prevent re-running

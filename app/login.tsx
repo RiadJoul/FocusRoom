@@ -5,12 +5,19 @@ import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { analytics, Events, Properties } from '../lib/analytics';
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    analytics.track(Events.SCREEN_VIEW, {
+      [Properties.SCREEN_NAME]: 'Login'
+    });
+  }, []);
 
 
 
@@ -111,6 +118,20 @@ export default function Login() {
                   console.error('Error setting session:', sessionError);
                   Alert.alert('Sign in failed', sessionError.message);
                 } else if (sessionData?.session) {
+                  // Track sign in
+                  analytics.track(Events.SIGN_IN, {
+                    method: 'google',
+                    [Properties.USER_ID]: sessionData.session.user.id,
+                    [Properties.EMAIL]: sessionData.session.user.email,
+                  });
+                  
+                  // Identify user
+                  analytics.identify(sessionData.session.user.id, {
+                    [Properties.EMAIL]: sessionData.session.user.email,
+                    [Properties.NAME]: sessionData.session.user.user_metadata?.full_name,
+                    [Properties.SIGNUP_DATE]: sessionData.session.user.created_at,
+                  });
+                  
                   // The onAuthStateChange listener above will handle navigation
                 }
               }
@@ -148,7 +169,7 @@ export default function Login() {
               }}
             />
             <Image
-              source={require('../assets/illustrations/time-illustration.svg')}
+              source={require('../assets/illustrations/room-illustration.png')}
               style={{ width: 280, height: 280 }}
               contentFit="contain"
             />
@@ -160,8 +181,8 @@ export default function Login() {
           </Text>
 
           {/* Subtitle */}
-          <Text className="text-lg text-gray-400 text-center mb-12 px-4 leading-7">
-            Take control of your time and unlock your focus
+          <Text className="text-lg font-primary-regular text-gray-400 text-center mb-12 px-4 leading-7">
+            Transform your focus sessions into interstellar adventures
           </Text>
 
           {/* Google Sign In Button */}

@@ -1,6 +1,6 @@
 import { FontAwesome5 } from '@expo/vector-icons';
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { TouchableOpacity, View } from 'react-native';
 
 interface FloatingAddButtonProps {
   onPress: () => void;
@@ -14,7 +14,7 @@ export function FloatingAddButton({ onPress }: FloatingAddButtonProps) {
         activeOpacity={0.8}
         onPress={onPress}
         style={{
-          shadowColor: '#EA526F',
+          shadowColor: '#8F8F8F',
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.3,
           shadowRadius: 8,

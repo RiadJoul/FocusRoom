@@ -1,168 +1,46 @@
 import { Task } from '@/lib/stores/taskStore';
-import { getPriorityColor } from '@/lib/utils/taskUtils';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Text, TouchableOpacity, View } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Alert, Image, Text, TouchableOpacity, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
-    Extrapolation,
-    FadeIn,
-    FadeInDown,
-    interpolate,
-    runOnJS,
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming
+  FadeIn,
+  FadeInDown,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Model3DViewer } from './Model3DViewer';
+import { PlanetTrip, formatDistance } from './PlanetTrips';
 
 interface FocusSessionScreenProps {
   tasks: Task[];
+  trip: PlanetTrip;
   onEndSession: (duration: number, tasksCompleted: string[]) => void;
   onMarkTasksComplete: (taskIds: string[]) => void;
 }
 
-interface FocusTaskItemProps {
-  task: Task;
-  index: number;
-  onComplete: (taskId: string) => void;
-}
 
-function FocusTaskItem({ task, index, onComplete }: FocusTaskItemProps) {
-  const translateX = useSharedValue(0);
-  const opacity = useSharedValue(1);
-  const scale = useSharedValue(1);
-  const isCompleting = useSharedValue(false);
-
-  const SWIPE_THRESHOLD = 100;
-
-  const handleComplete = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete(task.id);
-  };
-
-  const panGesture = Gesture.Pan()
-    .onUpdate((event) => {
-      // Only allow right swipe
-      if (event.translationX > 0) {
-        translateX.value = event.translationX;
-        
-        // Scale effect based on swipe progress
-        const progress = Math.min(event.translationX / SWIPE_THRESHOLD, 1);
-        scale.value = 1 - progress * 0.05;
-      }
-    })
-    .onEnd((event) => {
-      // Right swipe - Complete task
-      if (event.translationX > SWIPE_THRESHOLD && !isCompleting.value) {
-        isCompleting.value = true;
-        translateX.value = withTiming(400, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        scale.value = withTiming(0.8, { duration: 300 }, () => {
-          runOnJS(handleComplete)();
-        });
-      }
-      // Spring back to original position
-      else {
-        translateX.value = withTiming(0, { duration: 200 });
-        scale.value = withTiming(1, { duration: 200 });
-      }
-    });
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: translateX.value },
-        { scale: scale.value },
-      ],
-      opacity: opacity.value,
-    };
-  });
-
-  const checkIconStyle = useAnimatedStyle(() => {
-    const progress = interpolate(
-      translateX.value,
-      [0, SWIPE_THRESHOLD],
-      [0, 1],
-      Extrapolation.CLAMP
-    );
-
-    return {
-      opacity: progress,
-      transform: [
-        { scale: interpolate(progress, [0, 1], [0.5, 1.2]) },
-      ],
-    };
-  });
-
-  const backgroundStyle = useAnimatedStyle(() => {
-    const progress = interpolate(
-      translateX.value,
-      [0, SWIPE_THRESHOLD],
-      [0, 1],
-      Extrapolation.CLAMP
-    );
-
-    return {
-      opacity: progress * 0.3,
-    };
-  });
-
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(600 + index * 100)}
-      className="mb-3"
-    >
-      {/* Background Indicator */}
-      <Animated.View 
-        style={backgroundStyle}
-        className="absolute left-0 top-0 bottom-0 w-24 bg-primary rounded-xl flex items-center justify-center"
-      >
-        <Animated.View style={checkIconStyle}>
-          <Text className="text-3xl">✓</Text>
-        </Animated.View>
-      </Animated.View>
-
-      {/* Task Card */}
-      <GestureDetector gesture={panGesture}>
-        <Animated.View
-          style={animatedStyle}
-          className={`p-4 rounded-xl border bg-black/40 ${getPriorityColor(task.priority)}`}
-        >
-          <Text className="text-white font-primary-semibold text-base leading-tight">
-            {task.title}
-          </Text>
-          <View className="flex-row items-center mt-2">
-            <Text className="text-xs font-primary-medium capitalize" style={{
-              color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
-            }}>
-              {task.priority} priority
-            </Text>
-            <Text className="text-gray-400 text-xs font-primary-medium ml-3">
-              👉 Swipe right to complete
-            </Text>
-          </View>
-        </Animated.View>
-      </GestureDetector>
-    </Animated.View>
-  );
-}
-
-export function FocusSessionScreen({ tasks, onEndSession, onMarkTasksComplete }: FocusSessionScreenProps) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksComplete }: FocusSessionScreenProps) {
+  const [remainingSeconds, setRemainingSeconds] = useState(trip.duration);
   const [isPaused, setIsPaused] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Start timer
+  // Countdown timer
   useEffect(() => {
     if (!isPaused && !sessionEnded) {
       intervalRef.current = setInterval(() => {
-        setElapsedSeconds(prev => prev + 1);
+        setRemainingSeconds(prev => {
+          if (prev <= 1) {
+            // Timer reached zero
+            setSessionEnded(true);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            return 0;
+          }
+          return prev - 1;
+        });
       }, 1000);
     }
 
@@ -183,6 +61,22 @@ export function FocusSessionScreen({ tasks, onEndSession, onMarkTasksComplete }:
     }
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const formatRemainingTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    
+    if (hrs > 0) {
+      if (mins > 0) {
+        return `${hrs}h${mins}min`;
+      }
+      return `${hrs}h`;
+    }
+    return `${mins}min`;
+  };
+
+  // Calculate remaining distance based on progress
+  const remainingDistance = Math.floor((remainingSeconds / trip.duration) * trip.distance_km);
 
   const handlePause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -246,31 +140,52 @@ export function FocusSessionScreen({ tasks, onEndSession, onMarkTasksComplete }:
   const handleFinishAndMarkComplete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const completedIds = Array.from(completedTaskIds);
+    const elapsedSeconds = trip.duration - remainingSeconds;
     onMarkTasksComplete(completedIds);
     onEndSession(elapsedSeconds, completedIds);
     router.back();
   };
 
   const handleFinishWithoutMarking = () => {
+    const elapsedSeconds = trip.duration - remainingSeconds;
     onEndSession(elapsedSeconds, []);
     router.back();
   };
 
   if (sessionEnded) {
+    const elapsedSeconds = trip.duration - remainingSeconds;
     return (
       <SafeAreaView className="flex-1 bg-midnight-black">
         <Animated.View entering={FadeIn.duration(600)} className="flex-1 items-center justify-center px-6">
           {/* Completion Animation */}
           <Animated.View entering={FadeInDown.delay(200)} className="items-center mb-8">
-            <View className="w-32 h-32 rounded-full bg-primary/10 items-center justify-center mb-6">
-              <Text className="text-6xl">🔓</Text>
+            <View className="mb-6">
+              <Image
+                source={require('../../assets/images/logo.png')}
+                style={{ width: 60, height: 60 }}
+               
+              />
             </View>
             <Text className="text-white font-primary-bold text-3xl mb-3 text-center">
-              Session Complete!
+              Journey Complete!
             </Text>
             <Text className="text-gray-400 font-primary-medium text-lg text-center">
-              You focused for {formatTime(elapsedSeconds)}
+              {trip.from} → {trip.to}
             </Text>
+            <View className="flex-row items-center justify-center mt-3 gap-4">
+              <View className="flex-row items-center bg-primary/10 border border-primary/30 px-4 py-2 rounded-xl">
+                <MaterialCommunityIcons name="rocket" size={20} color="#818CF8" />
+                <Text className="text-primary font-primary-bold text-base ml-2">
+                  {formatDistance(trip.distance_km)}
+                </Text>
+              </View>
+              <View className="flex-row items-center bg-primary/10 border border-primary/30 px-4 py-2 rounded-xl">
+                <Ionicons name="time-outline" size={20} color="#9CA3AF" />
+                <Text className="text-gray-300 font-primary-bold text-base ml-2">
+                  {formatTime(elapsedSeconds)}
+                </Text>
+              </View>
+            </View>
           </Animated.View>
 
           {/* Tasks Summary */}
@@ -351,82 +266,104 @@ export function FocusSessionScreen({ tasks, onEndSession, onMarkTasksComplete }:
             width={undefined}
             height={undefined}
             autoRotate={!isPaused}
-            timerSeconds={elapsedSeconds}
+            timerSeconds={remainingSeconds}
           />
         </Animated.View>
 
         {/* UI Overlay */}
         <SafeAreaView className="flex-1" style={{ backgroundColor: 'transparent' }}>
+        
+        {/* Progress Track - Right Side */}
+        <View className="absolute right-6 top-28 bottom-16" style={{ width: 4 }}>
+          {/* Track Background */}
+          <View className="absolute inset-0 bg-gray-800/50 rounded-full" />
+          
+          {/* Progress Fill */}
+          <Animated.View 
+            className="absolute bottom-0 left-0 right-0 bg-primary rounded-full"
+            style={{
+              height: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
+            }}
+          />
+          
+          {/* Rocket Icon */}
+          <Animated.View 
+            className="absolute -left-3"
+            style={{
+              bottom: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
+              transform: [{ translateY: 10 }],
+            }}
+          >
+            <Text className="text-3xl pr-12">
+              <MaterialCommunityIcons name="rocket-outline" size={24} color="white" />
+            </Text>
+          </Animated.View>
+          
+          {/* Start Point */}
+          <View className="" />
+          
+          {/* End Point */}
+          <View className="">
+            <Text className="absolute -top-7 -left-3 text-xl pr-12">
+              <Ionicons name="planet-outline" size={24} color="white" />
+            </Text>
+          </View>
+        </View>
+        
         {/* Header with Timer */}
         <Animated.View entering={FadeInDown} className="px-6 py-4">
-          <View className="flex-row items-center justify-between">
-            <TouchableOpacity
-              onPress={handleEndSession}
-              className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={28} color="#EF4444" />
-            </TouchableOpacity>
+          <View className="flex-row items-star justify-between">
+            {/* Left Side - Pause and Exit */}
+            <View className="flex-col gap-2">
+              <TouchableOpacity
+                onPress={handlePause}
+                className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
+                activeOpacity={0.7}
+              >
+                <Ionicons name={isPaused ? 'play' : 'pause'} size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              
+              {isPaused && (
+                <TouchableOpacity
+                  onPress={handleEndSession}
+                  className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={28} color="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
 
             {/* Timer Display */}
             <View className="flex-1 items-center">
               <View className="bg-black/60 px-8 py-3 rounded-2xl">
-                <Text className="text-white font-primary-bold text-4xl tracking-wider">
-                  {formatTime(elapsedSeconds)}
+                <Text className="text-white font-primary-bold text-xl tracking-wider">
+                  Arriving in {formatRemainingTime(remainingSeconds)} 
                 </Text>
                 <Text className="text-gray-300 font-primary-medium text-sm mt-1 text-center">
-                  {isPaused ? 'PAUSED' : 'FOCUS MODE'}
+                  {isPaused ? 'PAUSED' : trip.to.toUpperCase()}
                 </Text>
               </View>
             </View>
 
-            <TouchableOpacity
-              onPress={handlePause}
-              className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
-              activeOpacity={0.7}
-            >
-              <Ionicons name={isPaused ? 'play' : 'pause'} size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+            {/* Right Side - Empty for balance */}
+            <View className="w-12" />
           </View>
         </Animated.View>
 
-        {/* Spacer to push tasks to bottom */}
-        <View className="flex-1" />
-
-        {/* Task Cards at Bottom */}
-        <Animated.View entering={FadeInDown.delay(500)} className="px-6 pb-6">
-          <View className="bg-black/60 backdrop-blur-lg rounded-3xl p-6">
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-white font-primary-semibold text-lg">
-                Working on
-              </Text>
-              <Text className="text-primary font-primary-bold text-base">
-                {completedTaskIds.size}/{tasks.length} completed
-              </Text>
-            </View>
-            <View>
-              {tasks.filter(task => !completedTaskIds.has(task.id)).map((task, index) => (
-                <FocusTaskItem
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  onComplete={handleCompleteTask}
-                />
-              ))}
-              {tasks.filter(task => !completedTaskIds.has(task.id)).length === 0 && (
-                <Animated.View entering={FadeInDown} className="items-center py-8">
-                  <Text className="text-6xl mb-3">🎉</Text>
-                  <Text className="text-white font-primary-semibold text-xl">
-                    All tasks completed!
-                  </Text>
-                  <Text className="text-gray-400 font-primary-medium text-sm mt-2">
-                    Ending session...
-                  </Text>
-                </Animated.View>
-              )}
-            </View>
+        {/* Distance Remaining - Bottom Left */}
+        <Animated.View 
+          entering={FadeIn.delay(300)}
+          className="absolute bottom-8 left-6"
+        >
+          <View className="bg-black/60 px-4 py-2 rounded-xl border border-gray-700/30">
+            <Text className="text-gray-400 font-primary-medium text-xs">Distance Left</Text>
+            <Text className="text-white font-primary-bold text-lg mt-1">
+              {formatDistance(remainingDistance)}
+            </Text>
           </View>
         </Animated.View>
+
       </SafeAreaView>
       </View>
     </GestureHandlerRootView>

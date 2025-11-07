@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { analytics, Events, Properties } from '../analytics';
 import { supabase } from '../supabase';
 
 export type Task = {
@@ -71,6 +72,15 @@ export const useTaskStore = create<TaskState>()(
           
           if (error) throw error;
           
+          // Track task creation
+          analytics.track(Events.TASK_CREATED, {
+            [Properties.TASK_ID]: data.id,
+            [Properties.TASK_PRIORITY]: data.priority,
+            has_due_date: !!data.due_date,
+          });
+          
+          analytics.incrementProperty('total_tasks_created', 1);
+          
           set({ tasks: [...get().tasks, data] });
           return data;
         } catch (error) {
@@ -96,12 +106,23 @@ export const useTaskStore = create<TaskState>()(
       
       removeTask: async (id: string) => {
         try {
+          const task = get().tasks.find((t) => t.id === id);
+          
           const { error } = await supabase
             .from('tasks')
             .delete()
             .eq('id', id);
           
           if (error) throw error;
+          
+          // Track task deletion
+          if (task) {
+            analytics.track(Events.TASK_DELETED, {
+              [Properties.TASK_ID]: task.id,
+              [Properties.TASK_PRIORITY]: task.priority,
+              [Properties.TASK_STATUS]: task.status,
+            });
+          }
           
           set({ tasks: get().tasks.filter((t) => t.id !== id) });
         } catch (error) {
@@ -114,6 +135,17 @@ export const useTaskStore = create<TaskState>()(
         if (!task) return;
         
         const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+        
+        // Track task completion
+        if (newStatus === 'completed') {
+          analytics.track(Events.TASK_COMPLETED, {
+            [Properties.TASK_ID]: task.id,
+            [Properties.TASK_PRIORITY]: task.priority,
+          });
+          
+          analytics.incrementProperty('total_tasks_completed', 1);
+        }
+        
         await get().updateTask(id, { status: newStatus });
       },
       

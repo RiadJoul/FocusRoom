@@ -342,7 +342,7 @@ export function AddTaskBottomSheet({
                     <Ionicons 
                       name={icon.name as any} 
                       size={20} 
-                      color={selectedIcon === icon.name ? '#EA526F' : '#9CA3AF'} 
+                      color={selectedIcon === icon.name ? '#8F8F8F' : '#9CA3AF'} 
                     />
                   </TouchableOpacity>
                 ))}
@@ -386,7 +386,7 @@ export function AddTaskBottomSheet({
                     <Ionicons 
                       name={list.icon as any || 'list-outline'} 
                       size={16} 
-                      color={selectedListId === list.id ? '#EA526F' : '#9CA3AF'} 
+                      color={selectedListId === list.id ? '#8F8F8F' : '#9CA3AF'} 
                     />
                     <Text
                       className={`font-primary-semibold ${selectedListId === list.id ? 'text-primary' : 'text-gray-400'}`}
