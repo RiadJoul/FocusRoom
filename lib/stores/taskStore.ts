@@ -4,6 +4,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { analytics, Events, Properties } from '../analytics';
 import { supabase } from '../supabase';
 
+export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
 export type Task = {
   id: string;
   user_id: string;
@@ -14,15 +16,34 @@ export type Task = {
   status: 'pending' | 'completed' | 'archived';
   created_at: string;
   updated_at?: string;
+  // Recurring task fields
+  is_recurring?: boolean;
+  recurrence_type?: RecurrenceType | null;
+  recurrence_interval?: number; // e.g., every 2 weeks
+  recurrence_days?: number[]; // For weekly: [1] = Monday, [1,3,5] = Mon/Wed/Fri
+  recurrence_end_date?: string | null;
+  parent_task_id?: string | null; // Reference to recurring task template
+  last_occurrence_date?: string | null;
 };
 
 type TaskState = {
   tasks: Task[];
   loading: boolean;
   addTask: (listId: string, title: string, priority?: 'low' | 'medium' | 'high', dueDate?: string | null) => Promise<Task | null>;
+  addRecurringTask: (
+    listId: string,
+    title: string,
+    recurrenceType: RecurrenceType,
+    recurrenceDays?: number[],
+    priority?: 'low' | 'medium' | 'high',
+    dueDate?: string | null,
+    interval?: number,
+    endDate?: string | null
+  ) => Promise<Task | null>;
   updateTask: (id: string, patch: Partial<Task>) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
   toggleComplete: (id: string) => Promise<void>;
+  generateRecurringTaskOccurrences: () => Promise<void>;
   tasksByList: (listId: string) => Task[];
   setTasks: (tasks: Task[]) => void;
   fetchTasks: (userId: string) => Promise<void>;
@@ -147,6 +168,80 @@ export const useTaskStore = create<TaskState>()(
         }
         
         await get().updateTask(id, { status: newStatus });
+      },
+      
+      addRecurringTask: async (
+        listId: string,
+        title: string,
+        recurrenceType: RecurrenceType,
+        recurrenceDays?: number[],
+        priority?: 'low' | 'medium' | 'high',
+        dueDate?: string | null,
+        interval?: number,
+        endDate?: string | null
+      ) => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('No user');
+          
+          const newTask = {
+            user_id: user.id,
+            list_id: listId,
+            title,
+            priority: priority || 'medium',
+            due_date: dueDate || null,
+            status: 'pending' as const,
+            is_recurring: true,
+            recurrence_type: recurrenceType,
+            recurrence_interval: interval || 1,
+            recurrence_days: recurrenceDays || null,
+            recurrence_end_date: endDate || null,
+          };
+          
+          const { data, error } = await supabase
+            .from('tasks')
+            .insert([newTask])
+            .select()
+            .single();
+          
+          if (error) throw error;
+          
+          // Track recurring task creation
+          analytics.track(Events.TASK_CREATED, {
+            [Properties.TASK_ID]: data.id,
+            [Properties.TASK_PRIORITY]: data.priority,
+            has_due_date: !!data.due_date,
+            is_recurring: true,
+            recurrence_type: recurrenceType,
+          });
+          
+          analytics.incrementProperty('total_tasks_created', 1);
+          
+          set({ tasks: [...get().tasks, data] });
+          return data;
+        } catch (error) {
+          console.error('Error adding recurring task:', error);
+          return null;
+        }
+      },
+      
+      generateRecurringTaskOccurrences: async () => {
+        try {
+          // Call the Supabase function to generate recurring task occurrences
+          const { data, error } = await supabase.rpc('check_and_generate_recurring_tasks');
+          
+          if (error) throw error;
+          
+          console.log(`Generated ${data} recurring task occurrences`);
+          
+          // Refresh tasks to show new occurrences
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await get().fetchTasks(user.id);
+          }
+        } catch (error) {
+          console.error('Error generating recurring task occurrences:', error);
+        }
       },
       
       tasksByList: (listId: string) => get().tasks.filter((t) => t.list_id === listId),

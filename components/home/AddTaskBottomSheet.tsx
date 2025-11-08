@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Keyboard, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 interface AddTaskBottomSheetProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
@@ -13,7 +14,7 @@ interface AddTaskBottomSheetProps {
 }
 
 // Common list icons
-const LIST_ICONS = [
+export const LIST_ICONS = [
   { name: 'briefcase-outline', label: 'Work' },
   { name: 'code-slash-outline', label: 'Coding' },
   { name: 'book-outline', label: 'Study' },
@@ -184,23 +185,23 @@ export function AddTaskBottomSheet({
                 onPress={() => setSelectedPriority(priority)}
                 disabled={lists.length === 0 && !isCreatingList}
                 className={`flex-1 py-3 rounded-xl border items-center ${selectedPriority === priority
-                    ? priority === 'high'
-                      ? 'bg-red-500/10 border-red-500'
-                      : priority === 'medium'
-                        ? 'bg-yellow-500/10 border-yellow-500'
-                        : 'bg-green-500/10 border-green-500'
-                    : 'bg-gray-900/50 border-gray-800'
+                  ? priority === 'high'
+                    ? 'bg-red-500/10 border-red-500'
+                    : priority === 'medium'
+                      ? 'bg-yellow-500/10 border-yellow-500'
+                      : 'bg-green-500/10 border-green-500'
+                  : 'bg-gray-900/50 border-gray-800'
                   }`}
                 activeOpacity={0.7}
               >
                 <Text
                   className={`font-primary-semibold capitalize ${selectedPriority === priority
-                      ? priority === 'high'
-                        ? 'text-red-500'
-                        : priority === 'medium'
-                          ? 'text-yellow-500'
-                          : 'text-green-500'
-                      : 'text-gray-400'
+                    ? priority === 'high'
+                      ? 'text-red-500'
+                      : priority === 'medium'
+                        ? 'text-yellow-500'
+                        : 'text-green-500'
+                    : 'text-gray-400'
                     }`}
                 >
                   {priority}
@@ -218,15 +219,15 @@ export function AddTaskBottomSheet({
             <TouchableOpacity
               onPress={handleSetToday}
               className={`flex-1 py-3 rounded-xl border items-center ${selectedDueDate && formatDueDate(selectedDueDate) === 'Today'
-                  ? 'bg-primary/10 border-primary'
-                  : 'bg-gray-900/50 border-gray-800'
+                ? 'bg-primary/10 border-primary'
+                : 'bg-gray-900/50 border-gray-800'
                 }`}
               activeOpacity={0.7}
             >
               <Text
                 className={`font-primary-semibold text-sm ${selectedDueDate && formatDueDate(selectedDueDate) === 'Today'
-                    ? 'text-primary'
-                    : 'text-gray-400'
+                  ? 'text-primary'
+                  : 'text-gray-400'
                   }`}
               >
                 📅 Today
@@ -237,15 +238,15 @@ export function AddTaskBottomSheet({
             <TouchableOpacity
               onPress={handleSetTomorrow}
               className={`flex-1 py-3 rounded-xl border items-center ${selectedDueDate && formatDueDate(selectedDueDate) === 'Tomorrow'
-                  ? 'bg-primary/10 border-primary'
-                  : 'bg-gray-900/50 border-gray-800'
+                ? 'bg-primary/10 border-primary'
+                : 'bg-gray-900/50 border-gray-800'
                 }`}
               activeOpacity={0.7}
             >
               <Text
                 className={`font-primary-semibold text-sm ${selectedDueDate && formatDueDate(selectedDueDate) === 'Tomorrow'
-                    ? 'text-primary'
-                    : 'text-gray-400'
+                  ? 'text-primary'
+                  : 'text-gray-400'
                   }`}
               >
                 🗓️ Tomorrow
@@ -256,15 +257,15 @@ export function AddTaskBottomSheet({
             <TouchableOpacity
               onPress={() => setShowDatePicker(!showDatePicker)}
               className={`flex-1 py-3 rounded-xl border items-center ${selectedDueDate && formatDueDate(selectedDueDate) !== 'Today' && formatDueDate(selectedDueDate) !== 'Tomorrow'
-                  ? 'bg-primary/10 border-primary'
-                  : 'bg-gray-900/50 border-gray-800'
+                ? 'bg-primary/10 border-primary'
+                : 'bg-gray-900/50 border-gray-800'
                 }`}
               activeOpacity={0.7}
             >
               <Text
                 className={`font-primary-semibold text-sm ${selectedDueDate && formatDueDate(selectedDueDate) !== 'Today' && formatDueDate(selectedDueDate) !== 'Tomorrow'
-                    ? 'text-primary'
-                    : 'text-gray-400'
+                  ? 'text-primary'
+                  : 'text-gray-400'
                   }`}
               >
                 {selectedDueDate && formatDueDate(selectedDueDate) !== 'Today' && formatDueDate(selectedDueDate) !== 'Tomorrow'
@@ -319,12 +320,12 @@ export function AddTaskBottomSheet({
                 onChangeText={setNewListTitle}
                 autoFocus
               />
-              
+
               {/* Icon Selection */}
               <Text className="text-gray-400 font-primary-medium text-xs mb-2">Select Icon</Text>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
                 className="mb-3"
                 contentContainerStyle={{ gap: 8 }}
               >
@@ -332,22 +333,21 @@ export function AddTaskBottomSheet({
                   <TouchableOpacity
                     key={icon.name}
                     onPress={() => setSelectedIcon(icon.name)}
-                    className={`w-12 h-12 rounded-lg items-center justify-center border ${
-                      selectedIcon === icon.name
+                    className={`w-12 h-12 rounded-lg items-center justify-center border ${selectedIcon === icon.name
                         ? 'bg-primary/20 border-primary'
                         : 'bg-gray-800 border-gray-700'
-                    }`}
+                      }`}
                     activeOpacity={0.7}
                   >
-                    <Ionicons 
-                      name={icon.name as any} 
-                      size={20} 
-                      color={selectedIcon === icon.name ? '#8F8F8F' : '#9CA3AF'} 
+                    <Ionicons
+                      name={icon.name as any}
+                      size={20}
+                      color={selectedIcon === icon.name ? '#8F8F8F' : '#9CA3AF'}
                     />
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-              
+
               <View className="flex-row gap-2">
                 <TouchableOpacity
                   onPress={handleCancelCreateList}
@@ -377,19 +377,24 @@ export function AddTaskBottomSheet({
                 {lists.map((list) => (
                   <TouchableOpacity
                     key={list.id}
-                    onPress={() => setSelectedListId(list.id)}
-                    className={`ml-2 px-4 py-2 rounded-lg border flex-row items-center gap-2 ${selectedListId === list.id
-                      ? 'bg-primary/10 border-primary'
-                      : 'bg-gray-900/50 border-gray-800'}`}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedListId(list.id);
+                    }}
+                    className={`mr-2 px-4 py-3 rounded-xl border flex-row items-center gap-2 ${selectedListId === list.id
+                        ? 'bg-primary/10 border-primary'
+                        : 'bg-gray-900/50 border-gray-800'
+                      }`}
                     activeOpacity={0.7}
                   >
-                    <Ionicons 
-                      name={list.icon as any || 'list-outline'} 
-                      size={16} 
-                      color={selectedListId === list.id ? '#8F8F8F' : '#9CA3AF'} 
+                    <Ionicons
+                      name={list.icon as any}
+                      size={16}
+                      color={selectedListId === list.id ? '#E4F964' : '#6B7280'}
                     />
                     <Text
-                      className={`font-primary-semibold ${selectedListId === list.id ? 'text-primary' : 'text-gray-400'}`}
+                      className={`font-primary-semibold text-sm ${selectedListId === list.id ? 'text-primary' : 'text-gray-400'
+                        }`}
                     >
                       {list.title}
                     </Text>
@@ -421,8 +426,8 @@ export function AddTaskBottomSheet({
             onPress={handleAddTask}
             disabled={!taskTitle.trim() || !selectedListId || !selectedDueDate}
             className={`flex-1 py-4 rounded-xl items-center ${taskTitle.trim() && selectedListId && selectedDueDate
-                ? 'bg-primary'
-                : 'bg-gray-800'
+              ? 'bg-primary'
+              : 'bg-gray-800'
               }`}
             activeOpacity={0.8}
           >

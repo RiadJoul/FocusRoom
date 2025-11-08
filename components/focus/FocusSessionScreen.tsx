@@ -1,5 +1,6 @@
 import { Task } from '@/lib/stores/taskStore';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -26,7 +27,77 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
   const [isPaused, setIsPaused] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
+  const [isMuted, setIsMuted] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  // Setup and play ambient sound
+  useEffect(() => {
+    let sound: Audio.Sound | null = null;
+
+    const setupSound = async () => {
+      try {
+        // Set audio mode for ambient playback
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        });
+
+        // Try to load the deep ambient sound
+        try {
+          const { sound: loadedSound } = await Audio.Sound.createAsync(
+            require('@/assets/sounds/space-rumble.mp3'),
+            {
+              isLooping: true,
+              volume: 0.3,
+            },
+            null,
+            true
+          );
+
+          sound = loadedSound;
+          soundRef.current = loadedSound;
+          await loadedSound.playAsync();
+          console.log('🔊 Ambient sound started');
+        } catch (soundError) {
+          console.warn('⚠️ Space rumble sound file not found. Add space-rumble.mp3 to assets/sounds/');
+          console.warn('The focus session will work without sound.');
+        }
+      } catch (error) {
+        console.error('Failed to setup audio:', error);
+      }
+    };
+
+    setupSound();
+
+    return () => {
+      // Cleanup sound on unmount
+      if (soundRef.current) {
+        soundRef.current.stopAsync();
+        soundRef.current.unloadAsync();
+        console.log('🔇 Ambient sound stopped');
+      }
+    };
+  }, []);
+
+  // Handle pause/resume of sound
+  useEffect(() => {
+    if (soundRef.current) {
+      if (isPaused || isMuted) {
+        soundRef.current.pauseAsync();
+      } else if (!sessionEnded) {
+        soundRef.current.playAsync();
+      }
+    }
+  }, [isPaused, sessionEnded, isMuted]);
+
+  // Stop sound when session ends
+  useEffect(() => {
+    if (sessionEnded && soundRef.current) {
+      soundRef.current.stopAsync();
+    }
+  }, [sessionEnded]);
 
   // Countdown timer
   useEffect(() => {
@@ -81,6 +152,11 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
   const handlePause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsPaused(!isPaused);
+  };
+
+  const handleMuteToggle = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsMuted(!isMuted);
   };
 
   const handleEndSession = () => {
@@ -313,7 +389,7 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
         {/* Header with Timer */}
         <Animated.View entering={FadeInDown} className="px-6 py-4">
           <View className="flex-row items-star justify-between">
-            {/* Left Side - Pause and Exit */}
+            {/* Left Side - Pause, Mute and Exit */}
             <View className="flex-col gap-2">
               <TouchableOpacity
                 onPress={handlePause}
@@ -321,6 +397,18 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
                 activeOpacity={0.7}
               >
                 <Ionicons name={isPaused ? 'play' : 'pause'} size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={handleMuteToggle}
+                className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
+                activeOpacity={0.7}
+              >
+                <Ionicons 
+                  name={isMuted ? 'volume-mute' : 'volume-medium'} 
+                  size={24} 
+                  color={isMuted ? '#9CA3AF' : '#FFFFFF'} 
+                />
               </TouchableOpacity>
               
               {isPaused && (

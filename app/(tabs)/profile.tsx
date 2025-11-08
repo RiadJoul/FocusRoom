@@ -373,7 +373,7 @@ export default function Profile() {
         <View className="px-6 pb-4">
           <Text className="text-lg font-primary-bold text-white mb-4">Settings</Text>
           
-          <SettingItem
+          {/* <SettingItem
             icon="🔔"
             title="Push Notifications"
             subtitle="Receive reminders and updates"
@@ -395,7 +395,7 @@ export default function Profile() {
             subtitle="Vibrate on interactions"
             value={hapticFeedback}
             onValueChange={setHapticFeedback}
-          />
+          /> */}
         </View>
 
         {/* Menu Items */}
@@ -448,7 +448,7 @@ export default function Profile() {
             onPress={() => {
               Alert.alert(
                 'About FocusRoom',
-                '🚀 FocusFlight v1.0.0\n\nTransform your focus sessions into space journeys. Choose your tasks, pick a destination planet, and focus while traveling through the cosmos.\n\nMade with ❤️ for productivity enthusiasts',
+                '🚀 FocusRoom v1.0\n\nTransform your focus sessions into space journeys. Choose your tasks, pick a destination planet, and focus while traveling through the cosmos.\n\nMade with ❤️ for productivity enthusiasts',
                 [{ text: 'OK' }]
               );
             }}
@@ -483,10 +483,7 @@ export default function Profile() {
         {/* App Version */}
         <View className="items-center pt-6">
           <Text className="text-gray-600 text-xs font-primary-medium">
-            FocusFlight v1.0.0
-          </Text>
-          <Text className="text-gray-700 text-xs font-primary-medium mt-1">
-            {user?.id ? `User ID: ${user.id.slice(0, 8)}...` : ''}
+            FocusRoom v1.0
           </Text>
         </View>
       </ScrollView>

@@ -4,6 +4,7 @@ import { FloatingAddButton } from '@/components/home/FloatingAddButton';
 import { Header } from '@/components/home/Header';
 import { IntroModal } from '@/components/home/IntroModal';
 import { ProgressCard } from '@/components/home/ProgressCard';
+import { RecurringTaskModal } from '@/components/home/RecurringTaskModal';
 import { TaskList } from '@/components/home/TaskList';
 import { TasksSectionHeader } from '@/components/home/TasksSectionHeader';
 import { WeekCalendar } from '@/components/home/WeekCalendar';
@@ -38,6 +39,9 @@ export default function HomeScreen() {
   // Intro Modal
   const [showIntroModal, setShowIntroModal] = useState(false);
   
+  // Recurring Task Modal
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  
   // Selected Day for Filtering
   const today = useMemo(() => {
     const date = new Date();
@@ -64,11 +68,16 @@ export default function HomeScreen() {
     checkIntroSeen();
   }, [user?.id]);
 
-  // Fetch data on mount
+  // Fetch data on mount and generate recurring tasks
+  const generateRecurringTasks = useTaskStore((state) => state.generateRecurringTaskOccurrences);
+  
   useEffect(() => {
     if (user?.id) {
       fetchLists(user.id);
-      fetchTasks(user.id);
+      fetchTasks(user.id).then(() => {
+        // Generate any pending recurring task occurrences
+        generateRecurringTasks();
+      });
     }
   }, [user?.id]);
 
@@ -179,7 +188,10 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* Floating Add Button */}
-        <FloatingAddButton onPress={handleOpenBottomSheet} />
+        <FloatingAddButton 
+          onPress={handleOpenBottomSheet}
+          onLongPress={() => setShowRecurringModal(true)}
+        />
 
         {/* Bottom Sheet for Adding Task */}
         <AddTaskBottomSheet
@@ -193,6 +205,14 @@ export default function HomeScreen() {
         <IntroModal 
           visible={showIntroModal}
           onClose={handleCloseIntroModal}
+        />
+        
+        {/* Recurring Task Modal */}
+        <RecurringTaskModal
+          visible={showRecurringModal}
+          lists={lists}
+          onCreateList={handleCreateList}
+          onClose={() => setShowRecurringModal(false)}
         />
       </SafeAreaView>
     </GestureHandlerRootView>
