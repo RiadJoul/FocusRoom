@@ -14,14 +14,13 @@ import { useUserStore } from '@/lib/stores/userStore';
 import { getCompletedCount, getIncompleteTasks, getTasksForDay, getTopPriorityTasks } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
-  const router = useRouter();
   const user = useUserStore((state) => state.user);
   const tasks = useTaskStore((state) => state.tasks);
   const fetchTasks = useTaskStore((state) => state.fetchTasks);
@@ -31,24 +30,28 @@ export default function HomeScreen() {
   const lists = useListStore((state) => state.lists);
   const fetchLists = useListStore((state) => state.fetchLists);
   const addList = useListStore((state) => state.addList);
+  const removeList = useListStore((state) => state.removeList);
   const loading = useTaskStore((state) => state.loading);
 
   // Bottom Sheet
   const bottomSheetRef = useRef<BottomSheet>(null);
-  
+
+
   // Intro Modal
   const [showIntroModal, setShowIntroModal] = useState(false);
-  
+
   // Recurring Task Modal
   const [showRecurringModal, setShowRecurringModal] = useState(false);
-  
+
+
+
   // Selected Day for Filtering
   const today = useMemo(() => {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
     return date;
   }, []);
-  
+
   const [selectedDay, setSelectedDay] = useState<Date>(today);
 
   const handleOpenBottomSheet = useCallback(() => {
@@ -70,7 +73,7 @@ export default function HomeScreen() {
 
   // Fetch data on mount and generate recurring tasks
   const generateRecurringTasks = useTaskStore((state) => state.generateRecurringTaskOccurrences);
-  
+
   useEffect(() => {
     if (user?.id) {
       fetchLists(user.id);
@@ -90,7 +93,7 @@ export default function HomeScreen() {
   const incompleteTasks = useMemo(() => {
     return getIncompleteTasks(tasksForSelectedDay);
   }, [tasksForSelectedDay]);
-  
+
   // Get top priority tasks for selected day
   const topTasks = useMemo(() => {
     return getTopPriorityTasks(incompleteTasks);
@@ -116,6 +119,39 @@ export default function HomeScreen() {
     return await addList(title, icon);
   }, [addList]);
 
+  // Handler for deleting a list
+  const handleDeleteList = useCallback(async (listId: string, listTitle: string) => {
+    // Count tasks in this list
+    const tasksInList = tasks.filter(task => task.list_id === listId);
+    const taskCount = tasksInList.length;
+
+    // Show confirmation alert
+    Alert.alert(
+      'Delete List',
+      taskCount > 0
+        ? `Are you sure you want to delete "${listTitle}"? This will also delete ${taskCount} task${taskCount > 1 ? 's' : ''} in this list.`
+        : `Are you sure you want to delete "${listTitle}"?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            // Delete all tasks in the list
+            for (const task of tasksInList) {
+              await removeTask(task.id);
+            }
+            // Delete the list
+            await removeList(listId);
+          }
+        }
+      ]
+    );
+  }, [tasks, removeTask, removeList]);
+
   // Handler for deleting a task
   const handleDeleteTask = useCallback(async (taskId: string) => {
     await removeTask(taskId);
@@ -129,11 +165,12 @@ export default function HomeScreen() {
     setShowIntroModal(false);
   }, [user?.id]);
 
+
   return (
     <GestureHandlerRootView className="flex-1">
-      <SafeAreaView className="flex-1 bg-midnight-black pt-5">
-        <ScrollView 
-          className="flex-1 px-4" 
+      <SafeAreaView className="flex-1 bg-background pt-5">
+        <ScrollView
+          className="flex-1 px-4"
           showsVerticalScrollIndicator={false}
         >
           {/* Header Section */}
@@ -188,7 +225,7 @@ export default function HomeScreen() {
         </ScrollView>
 
         {/* Floating Add Button */}
-        <FloatingAddButton 
+        <FloatingAddButton
           onPress={handleOpenBottomSheet}
           onLongPress={() => setShowRecurringModal(true)}
         />
@@ -199,21 +236,24 @@ export default function HomeScreen() {
           lists={lists}
           onAddTask={handleAddTask}
           onCreateList={handleCreateList}
+          onDeleteList={handleDeleteList}
         />
 
         {/* Intro Modal */}
-        <IntroModal 
+        <IntroModal
           visible={showIntroModal}
           onClose={handleCloseIntroModal}
         />
-        
+
         {/* Recurring Task Modal */}
         <RecurringTaskModal
           visible={showRecurringModal}
           lists={lists}
           onCreateList={handleCreateList}
+          onDeleteList={handleDeleteList}
           onClose={() => setShowRecurringModal(false)}
         />
+
       </SafeAreaView>
     </GestureHandlerRootView>
   );

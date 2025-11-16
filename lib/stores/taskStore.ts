@@ -232,7 +232,6 @@ export const useTaskStore = create<TaskState>()(
           
           if (error) throw error;
           
-          console.log(`Generated ${data} recurring task occurrences`);
           
           // Refresh tasks to show new occurrences
           const { data: { user } } = await supabase.auth.getUser();

@@ -1,9 +1,7 @@
-import { Asset } from 'expo-asset';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet } from 'react-native';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three-stdlib';
 
 interface Model3DViewerProps {
   width?: number;
@@ -29,6 +27,8 @@ export function Model3DViewer({
   const planetsRef = useRef<THREE.Mesh[]>([]);
   const digitalClockDigitsRef = useRef<THREE.Mesh[][]>([]);
   const timerSecondsRef = useRef<number>(timerSeconds);
+  const destinationPlanetRef = useRef<THREE.Mesh | null>(null);
+  const destinationPlanetGroupRef = useRef<THREE.Group | null>(null);
 
   const onContextCreate = async (gl: ExpoWebGLRenderingContext) => {
     const renderer = new THREE.WebGLRenderer({
@@ -107,19 +107,43 @@ export function Model3DViewer({
     }
 
     // TEXTBOOK (open, center-left)
-    const textbookLeftPageGeometry = new THREE.BoxGeometry(0.55, 0.004, 0.7);
+
+    const textbookLeftPageGeometry = new THREE.BoxGeometry(0.55, 0.011, 0.7); // Slightly thicker page
     const textbookPageMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0xFFFAF0
+      color: 0xffffff, // Bright white
+      emissive: 0xeeeeee, // Slight glow
+      emissiveIntensity: 0.25,
+      side: THREE.DoubleSide // Ensure both sides are visible
     });
     const textbookLeftPage = new THREE.Mesh(textbookLeftPageGeometry, textbookPageMaterial);
-    textbookLeftPage.position.set(-0.5, 0.058, 0.2);
+    textbookLeftPage.position.set(-0.5, 0.062, 0.2); // Slightly above text lines
     textbookLeftPage.rotation.y = -0.15;
+    textbookLeftPage.castShadow = true;
+    textbookLeftPage.receiveShadow = true;
     deskGroup.add(textbookLeftPage);
 
+    // Add border to left page
+    const borderGeometry = new THREE.EdgesGeometry(textbookLeftPageGeometry);
+    const borderMaterial = new THREE.LineBasicMaterial({ color: 0x222222, linewidth: 2 });
+    const border = new THREE.LineSegments(borderGeometry, borderMaterial);
+    border.position.copy(textbookLeftPage.position);
+    border.rotation.copy(textbookLeftPage.rotation);
+    deskGroup.add(border);
+
+    // Right page: offset Y and Z to avoid Z-fighting
     const textbookRightPage = new THREE.Mesh(textbookLeftPageGeometry, textbookPageMaterial);
-    textbookRightPage.position.set(-0.05, 0.058, 0.25);
+    textbookRightPage.position.set(-0.05, 0.064, 0.26); // Slightly higher and further in Z
     textbookRightPage.rotation.y = 0.15;
+    textbookRightPage.castShadow = true;
+    textbookRightPage.receiveShadow = true;
     deskGroup.add(textbookRightPage);
+
+    // Add border to right page
+    const borderRightGeometry = new THREE.EdgesGeometry(textbookLeftPageGeometry);
+    const borderRight = new THREE.LineSegments(borderRightGeometry, borderMaterial);
+    borderRight.position.copy(textbookRightPage.position);
+    borderRight.rotation.copy(textbookRightPage.rotation);
+    deskGroup.add(borderRight);
 
     // Textbook spine/binding (center)
     const spineGeometry = new THREE.BoxGeometry(0.02, 0.01, 0.7);
@@ -380,7 +404,7 @@ export function Model3DViewer({
       color: 0xFFFFFF
     });
     const cup = new THREE.Mesh(cupGeometry, cupMaterial);
-    cup.position.set(1.3, 0.19, -0.3);
+    cup.position.set(0.3, 0.19, -0.3);
     deskGroup.add(cup);
 
     const handleGeometry = new THREE.TorusGeometry(0.07, 0.018, 12, 24, Math.PI);
@@ -395,7 +419,7 @@ export function Model3DViewer({
       color: 0x4a3428
     });
     const coffee = new THREE.Mesh(coffeeGeometry, coffeeMaterial);
-    coffee.position.set(1.3, 0.21, -0.3);
+    coffee.position.set(0.3, 0.21, -0.3);
     deskGroup.add(coffee);
 
     // Coffee surface
@@ -404,7 +428,7 @@ export function Model3DViewer({
       color: 0x3a2418
     });
     const coffeeSurface = new THREE.Mesh(coffeeSurfaceGeometry, coffeeSurfaceMaterial);
-    coffeeSurface.position.set(1.3, 0.331, -0.3);
+    coffeeSurface.position.set(0.3, 0.331, -0.3);
     coffeeSurface.rotation.x = -Math.PI / 2;
     deskGroup.add(coffeeSurface);
 
@@ -414,7 +438,7 @@ export function Model3DViewer({
     const steamPositions = new Float32Array(steamParticleCount * 3);
     
     for (let i = 0; i < steamParticleCount; i++) {
-      steamPositions[i * 3] = 1.3 + (Math.random() - 0.5) * 0.08;
+      steamPositions[i * 3] = 0.3 + (Math.random() - 0.5) * 0.08;
       steamPositions[i * 3 + 1] = 0.33 + Math.random() * 0.4;
       steamPositions[i * 3 + 2] = -0.3 + (Math.random() - 0.5) * 0.08;
     }
@@ -438,7 +462,7 @@ export function Model3DViewer({
       color: 0xD7CCC8
     });
     const coaster = new THREE.Mesh(coasterGeometry, coasterMaterial);
-    coaster.position.set(1.3, 0.059, -0.3);
+    coaster.position.set(0.3, 0.059, -0.3);
     deskGroup.add(coaster);
 
     // BOOKMARKS (sticking out of textbook)
@@ -474,105 +498,105 @@ export function Model3DViewer({
     }
 
     // DIGITAL TIMER DISPLAY
-    const digitalClockGroup = new THREE.Group();
-    digitalClockGroup.position.set(0, 0.58, -0.5);
-    digitalClockGroup.rotation.x = -Math.PI / 6;
+    // const digitalClockGroup = new THREE.Group();
+    // digitalClockGroup.position.set(0, 0.58, -0.5);
+    // digitalClockGroup.rotation.x = -Math.PI / 6;
     
-    const digitalClockBaseGeometry = new THREE.BoxGeometry(0.7, 0.22, 0.02);
-    const digitalClockBaseMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x37474F
-    });
-    const digitalClockBase = new THREE.Mesh(digitalClockBaseGeometry, digitalClockBaseMaterial);
-    digitalClockGroup.add(digitalClockBase);
+    // const digitalClockBaseGeometry = new THREE.BoxGeometry(0.7, 0.22, 0.02);
+    // const digitalClockBaseMaterial = new THREE.MeshLambertMaterial({ 
+    //   color: 0x37474F
+    // });
+    // const digitalClockBase = new THREE.Mesh(digitalClockBaseGeometry, digitalClockBaseMaterial);
+    // digitalClockGroup.add(digitalClockBase);
     
-    const digitalClockScreenGeometry = new THREE.BoxGeometry(0.6, 0.15, 0.025);
-    const digitalClockScreenMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x0a0a0a
-    });
-    const digitalClockScreen = new THREE.Mesh(digitalClockScreenGeometry, digitalClockScreenMaterial);
-    digitalClockScreen.position.set(0, 0, 0.013);
-    digitalClockGroup.add(digitalClockScreen);
+    // const digitalClockScreenGeometry = new THREE.BoxGeometry(0.6, 0.15, 0.025);
+    // const digitalClockScreenMaterial = new THREE.MeshBasicMaterial({ 
+    //   color: 0x0a0a0a
+    // });
+    // const digitalClockScreen = new THREE.Mesh(digitalClockScreenGeometry, digitalClockScreenMaterial);
+    // digitalClockScreen.position.set(0, 0, 0.013);
+    // digitalClockGroup.add(digitalClockScreen);
     
-    const createDigitSegments = (xOffset: number) => {
-      const segments: THREE.Mesh[] = [];
-      const segmentMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x00e676,
-        transparent: true,
-        opacity: 0.9
-      });
+    // const createDigitSegments = (xOffset: number) => {
+    //   const segments: THREE.Mesh[] = [];
+    //   const segmentMaterial = new THREE.MeshBasicMaterial({ 
+    //     color: 0x00e676,
+    //     transparent: true,
+    //     opacity: 0.9
+    //   });
       
-      const segmentWidth = 0.035;
-      const segmentHeight = 0.007;
+    //   const segmentWidth = 0.035;
+    //   const segmentHeight = 0.007;
       
-      const horizontalGeometry = new THREE.BoxGeometry(segmentWidth, segmentHeight, 0.001);
-      const verticalGeometry = new THREE.BoxGeometry(segmentHeight, segmentWidth, 0.001);
+    //   const horizontalGeometry = new THREE.BoxGeometry(segmentWidth, segmentHeight, 0.001);
+    //   const verticalGeometry = new THREE.BoxGeometry(segmentHeight, segmentWidth, 0.001);
       
-      const seg0 = new THREE.Mesh(horizontalGeometry, segmentMaterial.clone());
-      seg0.position.set(xOffset, 0.025, 0.026);
-      digitalClockGroup.add(seg0);
-      segments.push(seg0);
+    //   const seg0 = new THREE.Mesh(horizontalGeometry, segmentMaterial.clone());
+    //   seg0.position.set(xOffset, 0.025, 0.026);
+    //   digitalClockGroup.add(seg0);
+    //   segments.push(seg0);
       
-      const seg1 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
-      seg1.position.set(xOffset + 0.02, 0.008, 0.026);
-      digitalClockGroup.add(seg1);
-      segments.push(seg1);
+    //   const seg1 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
+    //   seg1.position.set(xOffset + 0.02, 0.008, 0.026);
+    //   digitalClockGroup.add(seg1);
+    //   segments.push(seg1);
       
-      const seg2 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
-      seg2.position.set(xOffset + 0.02, -0.008, 0.026);
-      digitalClockGroup.add(seg2);
-      segments.push(seg2);
+    //   const seg2 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
+    //   seg2.position.set(xOffset + 0.02, -0.008, 0.026);
+    //   digitalClockGroup.add(seg2);
+    //   segments.push(seg2);
       
-      const seg3 = new THREE.Mesh(horizontalGeometry, segmentMaterial.clone());
-      seg3.position.set(xOffset, -0.025, 0.026);
-      digitalClockGroup.add(seg3);
-      segments.push(seg3);
+    //   const seg3 = new THREE.Mesh(horizontalGeometry, segmentMaterial.clone());
+    //   seg3.position.set(xOffset, -0.025, 0.026);
+    //   digitalClockGroup.add(seg3);
+    //   segments.push(seg3);
       
-      const seg4 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
-      seg4.position.set(xOffset - 0.02, -0.008, 0.026);
-      digitalClockGroup.add(seg4);
-      segments.push(seg4);
+    //   const seg4 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
+    //   seg4.position.set(xOffset - 0.02, -0.008, 0.026);
+    //   digitalClockGroup.add(seg4);
+    //   segments.push(seg4);
       
-      const seg5 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
-      seg5.position.set(xOffset - 0.02, 0.008, 0.026);
-      digitalClockGroup.add(seg5);
-      segments.push(seg5);
+    //   const seg5 = new THREE.Mesh(verticalGeometry, segmentMaterial.clone());
+    //   seg5.position.set(xOffset - 0.02, 0.008, 0.026);
+    //   digitalClockGroup.add(seg5);
+    //   segments.push(seg5);
       
-      const seg6 = new THREE.Mesh(horizontalGeometry, segmentMaterial.clone());
-      seg6.position.set(xOffset, 0, 0.026);
-      digitalClockGroup.add(seg6);
-      segments.push(seg6);
+    //   const seg6 = new THREE.Mesh(horizontalGeometry, segmentMaterial.clone());
+    //   seg6.position.set(xOffset, 0, 0.026);
+    //   digitalClockGroup.add(seg6);
+    //   segments.push(seg6);
       
-      return segments;
-    };
+    //   return segments;
+    // };
     
-    const digit1Segments = createDigitSegments(-0.18);
-    const digit2Segments = createDigitSegments(-0.08);
-    const digit3Segments = createDigitSegments(0.06);
-    const digit4Segments = createDigitSegments(0.16);
+    // const digit1Segments = createDigitSegments(-0.18);
+    // const digit2Segments = createDigitSegments(-0.08);
+    // const digit3Segments = createDigitSegments(0.06);
+    // const digit4Segments = createDigitSegments(0.16);
     
-    digitalClockDigitsRef.current = [
-      digit1Segments,
-      digit2Segments,
-      digit3Segments,
-      digit4Segments
-    ];
+    // digitalClockDigitsRef.current = [
+    //   digit1Segments,
+    //   digit2Segments,
+    //   digit3Segments,
+    //   digit4Segments
+    // ];
     
-    const colonDotGeometry = new THREE.CircleGeometry(0.005, 8);
-    const colonDotMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x00e676,
-      transparent: true,
-      opacity: 0.9
-    });
+    // const colonDotGeometry = new THREE.CircleGeometry(0.005, 8);
+    // const colonDotMaterial = new THREE.MeshBasicMaterial({ 
+    //   color: 0x00e676,
+    //   transparent: true,
+    //   opacity: 0.9
+    // });
     
-    const colonDot1 = new THREE.Mesh(colonDotGeometry, colonDotMaterial);
-    colonDot1.position.set(-0.01, 0.012, 0.026);
-    digitalClockGroup.add(colonDot1);
+    // const colonDot1 = new THREE.Mesh(colonDotGeometry, colonDotMaterial);
+    // colonDot1.position.set(-0.01, 0.012, 0.026);
+    // digitalClockGroup.add(colonDot1);
     
-    const colonDot2 = new THREE.Mesh(colonDotGeometry, colonDotMaterial);
-    colonDot2.position.set(-0.01, -0.012, 0.026);
-    digitalClockGroup.add(colonDot2);
+    // const colonDot2 = new THREE.Mesh(colonDotGeometry, colonDotMaterial);
+    // colonDot2.position.set(-0.01, -0.012, 0.026);
+    // digitalClockGroup.add(colonDot2);
     
-    deskGroup.add(digitalClockGroup);
+    // deskGroup.add(digitalClockGroup);
 
     // DESK ORGANIZER (back right, tidy)
     const organizerBaseGeometry = new THREE.BoxGeometry(0.4, 0.08, 0.15);
@@ -681,72 +705,14 @@ export function Model3DViewer({
       color: 0xFFFFFF, 
       size: 0.05,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.8,
+      depthTest: true,
+      depthWrite: false,
     });
     const stars = new THREE.Points(starsGeometry, starsMaterial);
+    stars.renderOrder = 0; // Render stars first
     starsRef.current = stars;
     scene.add(stars);
-
-    // Helper function to load GLB models
-    const loadGLBModel = async (modelPath: any): Promise<THREE.Object3D | null> => {
-      try {
-        console.log('Loading GLB model...');
-        // Load asset
-        const asset = Asset.fromModule(modelPath);
-        await asset.downloadAsync();
-        
-        if (!asset.localUri) {
-          console.error('Failed to load asset');
-          return null;
-        }
-
-        console.log('Fetching GLB from:', asset.localUri);
-        // Fetch the GLB file
-        const response = await fetch(asset.localUri);
-        const arrayBuffer = await response.arrayBuffer();
-        
-        console.log('Parsing GLB, size:', arrayBuffer.byteLength);
-        // Parse GLB using GLTFLoader
-        const loader = new GLTFLoader();
-        
-        return new Promise((resolve, reject) => {
-          loader.parse(
-            arrayBuffer,
-            '',
-            (gltf) => {
-              console.log('GLB loaded successfully!', gltf.scene);
-              console.log('Scene children:', gltf.scene.children.length);
-              
-              // Make sure materials are set up for mobile rendering
-              gltf.scene.traverse((child) => {
-                if (child instanceof THREE.Mesh) {
-                  console.log('Found mesh:', child.name || 'unnamed');
-                  if (child.material) {
-                    // Replace with a simple basic material (even simpler than Lambert)
-                    const newMaterial = new THREE.MeshBasicMaterial({
-                      color: 0xFFFFFF, // White
-                      wireframe: false,
-                    });
-                    child.material = newMaterial;
-                    child.material.needsUpdate = true;
-                    console.log('Replaced material with MeshBasicMaterial (white)');
-                  }
-                }
-              });
-              
-              resolve(gltf.scene);
-            },
-            (error) => {
-              console.error('Error parsing GLB:', error);
-              reject(error);
-            }
-          );
-        });
-      } catch (error) {
-        console.error('Error loading GLB model:', error);
-        return null;
-      }
-    };
 
     // Function to spawn a random planet occasionally
     const spawnPlanet = () => {
@@ -854,6 +820,42 @@ export function Model3DViewer({
 
     meshRef.current = deskGroup;
     scene.add(deskGroup);
+
+    // Create destination planet (hidden initially)
+    const destinationPlanetGroup = new THREE.Group();
+    const destinationPlanetGeometry = new THREE.SphereGeometry(3, 32, 32);
+    const destinationPlanetMaterial = new THREE.MeshPhongMaterial({
+      color: 0x4A90E2,
+      emissive: 0x2A5080,
+      emissiveIntensity: 0.3,
+      shininess: 30,
+      depthWrite: true,
+      depthTest: true,
+    });
+    const destinationPlanet = new THREE.Mesh(destinationPlanetGeometry, destinationPlanetMaterial);
+    destinationPlanet.renderOrder = 1; // Render after stars
+    destinationPlanetGroup.add(destinationPlanet);
+
+    // Add atmospheric glow to destination planet
+    const glowGeometry = new THREE.SphereGeometry(3.3, 32, 32);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: 0x6AB0FF,
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: true,
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.renderOrder = 2; // Render glow after planet
+    destinationPlanetGroup.add(glow);
+
+    // Position far away initially and hide
+    destinationPlanetGroup.position.set(0, 0, -100);
+    destinationPlanetGroup.visible = false;
+    scene.add(destinationPlanetGroup);
+    destinationPlanetRef.current = destinationPlanet;
+    destinationPlanetGroupRef.current = destinationPlanetGroup;
 
     const updateDigit = (segments: THREE.Mesh[], digit: number) => {
       const digitPatterns: boolean[][] = [
@@ -969,7 +971,7 @@ export function Model3DViewer({
             
             if (positions[i * 3 + 1] > 0.75) {
               positions[i * 3 + 1] = 0.33;
-              positions[i * 3] = 1.3 + (Math.random() - 0.5) * 0.08;
+              positions[i * 3] = 0.3 + (Math.random() - 0.5) * 0.08;
               positions[i * 3 + 2] = -0.3 + (Math.random() - 0.5) * 0.08;
             }
             
@@ -978,6 +980,43 @@ export function Model3DViewer({
           }
           
           steamParticlesRef.current.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // Handle destination planet appearance and approach (gradual over last 5 minutes)
+        if (destinationPlanetGroupRef.current) {
+          const remainingSeconds = timerSecondsRef.current;
+          const fiveMinutes = 300; // 5 minutes in seconds
+          
+          // Show planet gradually in last 5 minutes
+          if (remainingSeconds <= fiveMinutes && remainingSeconds > 0) {
+            destinationPlanetGroupRef.current.visible = true;
+            
+            // Calculate progress (0 to 1) over the 5 minutes
+            // 0 = just appeared (5 min left), 1 = fully visible (0 sec left)
+            const journeyProgress = (fiveMinutes - remainingSeconds) / fiveMinutes;
+            
+            // Keep planet far away in the distance
+            // Position it at a fixed distance (z: -30) to appear as destination in the distance
+            // Camera is at (0, 2.5, 8.5) looking at (0, 0.3, -4), so planet at -30 should be visible
+            destinationPlanetGroupRef.current.position.set(0, 0, -30);
+            
+            // Gradually fade in and scale up to make it more visible
+            // Start at 1.0x and grow to 2.0x to become more prominent but still distant
+            const startScale = 1.0;
+            const endScale = 2.0;
+            const scale = startScale + (journeyProgress * (endScale - startScale));
+            destinationPlanetGroupRef.current.scale.set(scale, scale, scale);
+            
+            // Gentle rotation of the planet
+            if (destinationPlanetRef.current) {
+              destinationPlanetRef.current.rotation.y += 0.003;
+            }
+          } else {
+            // Hide planet when not in final 5 minutes
+            destinationPlanetGroupRef.current.visible = false;
+            destinationPlanetGroupRef.current.position.z = -100;
+            destinationPlanetGroupRef.current.scale.set(0.5, 0.5, 0.5);
+          }
         }
       }
 

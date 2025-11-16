@@ -14,38 +14,39 @@ export const PLANET_TRIPS: PlanetTrip[] = [
     from: 'Earth',
     to: 'Moon',
     duration: 25 * 60, // 25 minutes
-    distance_km: 384400, // 384,400 km
-    color: '#9E9E9E',
-    description: 'Quick sprint session'
+    distance_km: 384_400,
+    color: '#A0AEC0', // soft lunar gray-blue
+    description: 'Quick focus boost 🌙',
   },
   {
     id: 'earth-mars',
     from: 'Earth',
     to: 'Mars',
     duration: 45 * 60, // 45 minutes
-    distance_km: 225000000, // 225 million km
-    color: '#FF6B6B',
-    description: 'Standard focus session'
+    distance_km: 225_000_000,
+    color: '#FF6B6B', // warm coral red
+    description: 'Standard focus flight 🔥',
   },
   {
     id: 'earth-jupiter',
     from: 'Earth',
     to: 'Jupiter',
     duration: 80 * 60, // 1h20min
-    distance_km: 628000000, // 628 million km
-    color: '#FFA726',
-    description: 'Deep work session'
+    distance_km: 628_000_000,
+    color: '#F5A623', // golden amber
+    description: 'Deep work orbit 🪐',
   },
   {
     id: 'earth-saturn',
     from: 'Earth',
     to: 'Saturn',
     duration: 120 * 60, // 2 hours
-    distance_km: 1200000000, // 1.2 billion km
-    color: '#FFD54F',
-    description: 'Extended focus session'
-  }
+    distance_km: 1_200_000_000,
+    color: '#00B7FF', // soft lilac ring color
+    description: 'Extended flow mission 💫',
+  },
 ];
+
 
 export const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);

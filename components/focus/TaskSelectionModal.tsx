@@ -117,8 +117,8 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                       isSelected
                         ? 'bg-primary/10 border-primary'
                         : canSelect
-                        ? 'bg-gray-900/50 border-gray-800'
-                        : 'bg-gray-900/30 border-gray-800/50'
+                        ? 'bg-card border-gray-800'
+                        : 'bg-card-dark border-gray-800/50'
                     }`}
                     activeOpacity={0.7}
                   >
@@ -130,7 +130,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                         }`}
                       >
                         {isSelected && (
-                          <Text className="text-midnight-black font-primary-bold text-sm">✓</Text>
+                          <Text className="text-background font-primary-bold text-sm">✓</Text>
                         )}
                       </View>
 
@@ -192,7 +192,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
               >
                 <Text
                   className={`font-primary-bold text-base ${
-                    selectedTaskIds.size > 0 ? 'text-midnight-black' : 'text-gray-600'
+                    selectedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
                   }`}
                 >
                   Next: Choose Trip
@@ -218,7 +218,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                 <TouchableOpacity
                   key={trip.id}
                   onPress={() => handleSelectTrip(trip)}
-                  className="mb-4 p-5 rounded-3xl border border-gray-800 bg-gray-900/50"
+                  className="mb-4 p-5 rounded-3xl"
                   activeOpacity={0.7}
                   style={{ backgroundColor: trip.color + '15' }}
                 >
@@ -244,7 +244,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                       </Text>
                     </View>
                     <View className="bg-primary px-4 py-2 rounded-xl">
-                      <Text className="text-midnight-black font-primary-bold text-sm">
+                      <Text className="text-background font-primary-bold text-sm">
                         Board Now →
                       </Text>
                     </View>

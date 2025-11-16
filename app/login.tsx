@@ -155,33 +155,26 @@ export default function Login() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-midnight-black">
+    <SafeAreaView className="flex-1 bg-black">
       <View className="flex-1 items-center justify-center px-8">
         <View className="items-center w-full">
           {/* Illustration */}
-          <View className="relative mb-12">
-            <View
-              className="absolute inset-0 bg-primary/10 rounded-full blur-3xl"
-              style={{
-                width: 280,
-                height: 280,
-                transform: [{ scale: 0.8 }]
-              }}
-            />
+          {/* <View className="relative mb-12">
             <Image
-              source={require('../assets/illustrations/room-illustration.png')}
-              style={{ width: 280, height: 280 }}
+              source={require('../assets/icons/ios-light.png')}
+              style={{ width: 180, height: 180 }}
               contentFit="contain"
+              className='rounded-lg'
             />
-          </View>
+          </View> */}
 
           {/* Title */}
-          <Text className="text-5xl font-primary-bold text-primary text-center mb-3">
+          <Text className="text-4xl font-primary-semibold text-white text-center mb-3">
             FocusRoom
           </Text>
 
           {/* Subtitle */}
-          <Text className="text-lg font-primary-regular text-gray-400 text-center mb-12 px-4 leading-7">
+          <Text className="text-lg font-primary-regular text-gray-300 text-center mb-12 px-4 leading-7">
             Transform your focus sessions into interstellar adventures
           </Text>
 
@@ -214,7 +207,7 @@ export default function Login() {
           </View>
 
           {/* Footer Text */}
-          <Text className="text-gray-500 text-center text-sm mt-8 px-8">
+          <Text className="text-gray-400 text-center text-sm mt-8 px-8">
             Secure authentication powered by Google OAuth
           </Text>
         </View>

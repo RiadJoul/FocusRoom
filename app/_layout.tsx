@@ -10,15 +10,16 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import Purchases from 'react-native-purchases';
+import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
 import { analytics, Events } from '../lib/analytics';
+import { usePremiumSync } from '../lib/hooks/usePremiumSync';
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
-
-
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -27,6 +28,8 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const user = useUserStore((state) => state.user);
+  usePremiumSync(user?.id);
   const router = useRouter();
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -35,27 +38,79 @@ export default function RootLayout() {
     Poppins_700Bold,
   });
 
+
   const [checking, setChecking] = useState(true);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
 
+  // Trial logic
+  const [trialExpired, setTrialExpired] = useState(false);
+
+  useEffect(() => {
+    if (user?.created_at) {
+      const signupDate = new Date(user.created_at);
+      const now = new Date();
+      const diffMs = now.getTime() - signupDate.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const trialDays = 7;
+      setTrialExpired(diffDays >= trialDays);
+    }
+  }, [user?.created_at]);
+
+  const REVENUECAT_APPLE_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
+
+  useEffect(() => {
+    Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
+    // Configure Purchases (RevenueCat)
+    if (Platform.OS === 'ios') {
+      Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
+    }
+  }, []);
+
+
+   async function presentPaywall(): Promise<boolean> {
+    // Track paywall opened
+    const openTime = Date.now();
+    await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
+
+    const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
+
+    // Track paywall closed
+    const closeTime = Date.now();
+    const durationSeconds = Math.round((closeTime - openTime) / 1000);
+    await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
+
+    switch (paywallResult) {
+      case PAYWALL_RESULT.NOT_PRESENTED:
+      case PAYWALL_RESULT.ERROR:
+      case PAYWALL_RESULT.CANCELLED:
+        presentPaywall();
+        return false;
+      case PAYWALL_RESULT.PURCHASED:
+        await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
+        return true;
+      case PAYWALL_RESULT.RESTORED:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+
   // Initialize Mixpanel
   useEffect(() => {
-    const initAnalytics = async () => {
+    const initServices = async () => {
       try {
-        console.log('🚀 Starting Mixpanel initialization...');
+        // Initialize analytics
         await analytics.init();
         console.log('✅ Mixpanel ready, tracking app open');
-        
-        // Print debug info
-        console.log('🔍 Mixpanel Debug Info:', JSON.stringify(analytics.getDebugInfo(), null, 2));
-        
         await analytics.track(Events.APP_OPENED);
+
       } catch (error) {
-        console.error('❌ Failed to initialize analytics:', error);
+        console.error('❌ Failed to initialize services:', error);
       }
     };
-    
-    initAnalytics();
+
+    initServices();
   }, []);
 
   useEffect(() => {
@@ -84,11 +139,12 @@ export default function RootLayout() {
               // Fallback to auth user
               useUserStore.getState().setUser(session.user);
             }
+
           } catch (err) {
             console.error('Error fetching user profile on startup:', err);
             useUserStore.getState().setUser(session.user);
           }
-          
+
           if (mounted) {
             setChecking(false);
             setInitialCheckDone(true);
@@ -102,7 +158,7 @@ export default function RootLayout() {
           setChecking(false);
           setInitialCheckDone(true);
         }
-        
+
         if (!seen) {
           router.replace('/onboarding' as any);
           return;
@@ -133,7 +189,7 @@ export default function RootLayout() {
 
     const handleDeepLink = async (event: { url: string }) => {
       const url = event.url;
-      
+
       // Ignore Expo development client URLs to prevent infinite loops
       if (url.includes('expo-development-client')) {
         return;
@@ -143,15 +199,15 @@ export default function RootLayout() {
       if (url === lastProcessedUrl) {
         return;
       }
-      
+
 
       // Check if it's an OAuth callback (focusroom://auth/callback or contains tokens)
       if (url.startsWith('focusroom://')) {
         lastProcessedUrl = url;
-        
+
         let accessToken = null;
         let refreshToken = null;
-        
+
         // Try to extract tokens from URL hash (after #)
         const hashPart = url.split('#')[1];
         if (hashPart) {
@@ -159,7 +215,7 @@ export default function RootLayout() {
           accessToken = hashParams.get('access_token');
           refreshToken = hashParams.get('refresh_token');
         }
-        
+
         // If not in hash, try query string (after ?)
         if (!accessToken) {
           const queryPart = url.split('?')[1]?.split('#')[0]; // Get query before hash
@@ -169,14 +225,14 @@ export default function RootLayout() {
             refreshToken = queryParams.get('refresh_token');
           }
         }
-        
+
         if (accessToken) {
           try {
             const { data, error } = await supabase.auth.setSession({
               access_token: accessToken,
               refresh_token: refreshToken || '',
             });
-            
+
             if (error) {
               console.error('Error setting session:', error);
             }
@@ -212,16 +268,21 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, checking]);
 
-  // Only block on fonts loading, not on checking state
-  // The router.replace calls will handle navigation
+  useEffect(() => {
+    if (trialExpired && user.is_premium === false) {
+      presentPaywall();
+    }
+  }, [trialExpired]);
+
+
   if (!fontsLoaded) {
     return null;
   }
 
-  return (
+  return (  
     <SafeAreaProvider>
       <Stack screenOptions={
-        { 
+        {
           headerShown: false,
           contentStyle: { backgroundColor: '#0A0A0A' },
           animation: 'fade',

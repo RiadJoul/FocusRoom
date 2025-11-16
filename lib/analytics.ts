@@ -17,7 +17,6 @@ class Analytics {
     this.initPromise = (async () => {
       try {
         console.log('🔄 Initializing Mixpanel with token:', MIXPANEL_TOKEN);
-        console.log('🌍 Using EU data residency server');
         
         // Create Mixpanel instance
         const trackAutomaticEvents = true;
@@ -78,7 +77,6 @@ class Analytics {
     
     // Flush immediately to ensure events are sent right away (for debugging)
     this.mixpanel.flush();
-    console.log('📤 Event flushed to Mixpanel');
   }
 
   // Set user properties
@@ -126,22 +124,6 @@ class Analytics {
     this.mixpanel.flush();
   }
 
-  // Get debug info
-  getDebugInfo() {
-    return {
-      token: MIXPANEL_TOKEN,
-      initialized: this.initialized,
-      serverURL: 'https://api.mixpanel.com',
-      instructions: [
-        '1. Go to https://mixpanel.com/',
-        '2. Click on your project',
-        `3. Verify your project token is: ${MIXPANEL_TOKEN}`,
-        '4. Check "Live View" or "Events" tab',
-        '5. Look for events like: _Mixpanel_Init_Test, App Opened',
-        '6. If using EU data residency, the server URL needs to be changed to api-eu.mixpanel.com'
-      ]
-    };
-  }
 }
 
 export const analytics = new Analytics();
@@ -191,9 +173,8 @@ export const Events = {
   
   // Subscription (future)
   PAYWALL_VIEWED: 'Paywall Viewed',
-  TRIAL_STARTED: 'Trial Started',
+  PAYWALL_CLOSED: 'Paywall Closed',
   SUBSCRIPTION_STARTED: 'Subscription Started',
-  SUBSCRIPTION_CANCELLED: 'Subscription Cancelled',
   
   // Screen Views
   SCREEN_VIEW: 'Screen View',

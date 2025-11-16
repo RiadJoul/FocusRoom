@@ -20,13 +20,13 @@ export function WeekCalendar({ selectedDay, today, onDaySelect }: WeekCalendarPr
           const isPast = date < today && !isToday;
           
           // Pre-calculate className strings to avoid nested ternaries
-          const dayColor = isSelected ? '#8F8F8F' : '#6B7280';
+          const dayColor = isSelected ? '#8F8F8F' : '#ffffff';
           const containerStyle = isSelected 
             ? '#8F8F8F' 
             : isPast 
-              ? 'rgba(17, 24, 39, 0.5)' 
+              ? '#000000' 
               : 'transparent';
-          const borderColor = isSelected ? '#8F8F8F' : '#1F2937';
+
           const textColor = isSelected 
             ? '#0A0A0A' 
             : isPast 
@@ -47,10 +47,10 @@ export function WeekCalendar({ selectedDay, today, onDaySelect }: WeekCalendarPr
                 {WEEK_DAYS[index]}
               </Text>
               <View 
-                className="w-14 h-16 rounded-xl items-center justify-center border"
+                className="w-14 h-16 rounded-xl items-center justify-center"
                 style={{
                   backgroundColor: containerStyle,
-                  borderColor: borderColor,
+                  
                   shadowColor: isSelected ? '#8F8F8F' : undefined,
                   shadowOpacity: isSelected ? 0.2 : 0,
                   shadowRadius: isSelected ? 8 : 0,

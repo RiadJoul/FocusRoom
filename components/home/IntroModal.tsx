@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withSequence,
-  withTiming
+    FadeIn,
+    FadeInDown,
+    useAnimatedStyle,
+    useSharedValue,
+    withDelay,
+    withSequence,
+    withTiming
 } from 'react-native-reanimated';
 
 interface IntroModalProps {
@@ -112,7 +112,7 @@ export function IntroModal({ visible, onClose }: IntroModalProps) {
           {/* Title */}
           <Animated.Text 
             entering={FadeInDown}
-            className="text-midnight-black font-primary-bold text-3xl mb-2"
+            className="text-background font-primary-bold text-3xl mb-2"
           >
             Welcome to FocusRoom!
           </Animated.Text>

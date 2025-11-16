@@ -5,21 +5,22 @@
 export const WEEK_DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /**
- * Get the week dates starting from Sunday
+ * Get the week dates with today at the second position (index 1)
  */
 export function getWeekDates() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dayOfWeek = today.getDay(); // 0 = Sunday
   const weekDates: Date[] = [];
   
-  for (let i = 0; i < 7; i++) {
+  // Today will be at index 1 (second position)
+  // So we need dates from yesterday to 5 days ahead
+  for (let i = -1; i < 6; i++) {
     const date = new Date(today);
-    date.setDate(today.getDate() - dayOfWeek + i);
+    date.setDate(today.getDate() + i);
     weekDates.push(date);
   }
   
-  return { weekDates, todayIndex: dayOfWeek };
+  return { weekDates, todayIndex: 1 };
 }
 
 /**

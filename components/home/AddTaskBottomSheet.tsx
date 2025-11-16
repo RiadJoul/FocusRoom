@@ -1,16 +1,18 @@
 import { TaskList } from '@/lib/stores/listStore';
 import { formatDueDate, getFutureDates } from '@/lib/utils/dateUtils';
+import { getQuickActions, getTaskSuggestions } from '@/lib/utils/taskSuggestions';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Keyboard, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Keyboard, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 interface AddTaskBottomSheetProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
   lists: TaskList[];
   onAddTask: (title: string, priority: 'low' | 'medium' | 'high', listId: string, dueDate: string | null) => Promise<void>;
   onCreateList: (title: string, icon: string) => Promise<TaskList | null>;
+  onDeleteList: (listId: string, listTitle: string) => Promise<void>;
 }
 
 // Common list icons
@@ -37,7 +39,8 @@ export function AddTaskBottomSheet({
   bottomSheetRef,
   lists,
   onAddTask,
-  onCreateList
+  onCreateList,
+  onDeleteList
 }: AddTaskBottomSheetProps) {
   const snapPoints = useMemo(() => ['75%', '90%'], []);
 
@@ -47,6 +50,11 @@ export function AddTaskBottomSheet({
   const [selectedListId, setSelectedListId] = useState<string>('');
   const [selectedDueDate, setSelectedDueDate] = useState<Date | null>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // AI Suggestions State
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [quickActions, setQuickActions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // List Creation State
   const [isCreatingList, setIsCreatingList] = useState(false);
@@ -60,6 +68,31 @@ export function AddTaskBottomSheet({
     }
   }, [lists, selectedListId]);
 
+  // Update suggestions when input or context changes
+  useEffect(() => {
+    const selectedList = lists.find(l => l.id === selectedListId);
+    const context = {
+      listName: selectedList?.title,
+      priority: selectedPriority,
+      dueDate: selectedDueDate || undefined,
+    };
+
+    // Get quick actions for empty input
+    if (taskTitle.length === 0) {
+      setQuickActions(getQuickActions(context));
+      setSuggestions([]);
+      setShowSuggestions(false);
+    } else if (taskTitle.length >= 2) {
+      // Get suggestions for partial input
+      const newSuggestions = getTaskSuggestions(taskTitle, context);
+      setSuggestions(newSuggestions);
+      setShowSuggestions(newSuggestions.length > 0);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [taskTitle, selectedListId, selectedPriority, selectedDueDate, lists]);
+
   const handleCloseBottomSheet = useCallback(() => {
     bottomSheetRef.current?.close();
     Keyboard.dismiss();
@@ -70,6 +103,8 @@ export function AddTaskBottomSheet({
     setNewListTitle('');
     setSelectedDueDate(new Date());
     setShowDatePicker(false);
+    setSuggestions([]);
+    setShowSuggestions(false);
   }, [bottomSheetRef]);
 
   const renderBackdrop = useCallback(
@@ -173,6 +208,57 @@ export function AddTaskBottomSheet({
             onChangeText={setTaskTitle}
             editable={lists.length > 0 || isCreatingList}
           />
+
+          {/* Quick Actions (shown when input is empty) */}
+          {taskTitle.length === 0 && quickActions.length > 0 && (
+            <View className="mt-2">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                {quickActions.map((action, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setTaskTitle(action + ' ');
+                    }}
+                    className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30"
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-primary font-primary-medium text-sm">{action}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Smart Suggestions */}
+          {showSuggestions && suggestions.length > 0 && (
+            <View className="mt-2 bg-gray-900/80 border border-gray-800 rounded-xl overflow-hidden">
+              {suggestions.map((suggestion, index) => (
+                <TouchableOpacity
+                  key={index}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setTaskTitle(suggestion);
+                    setShowSuggestions(false);
+                  }}
+                  className={`px-4 py-3 flex-row items-center ${
+                    index < suggestions.length - 1 ? 'border-b border-gray-800' : ''
+                  }`}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="bulb-outline" size={16} color="#9CA3AF" />
+                  <Text className="text-gray-300 font-primary-regular text-sm ml-2 flex-1">
+                    {suggestion}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={14} color="#6B7280" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Priority Selection */}
@@ -363,7 +449,7 @@ export function AddTaskBottomSheet({
                     }`}
                   activeOpacity={0.7}
                 >
-                  <Text className={`font-primary-semibold text-sm ${newListTitle.trim() ? 'text-midnight-black' : 'text-gray-600'
+                  <Text className={`font-primary-semibold text-sm ${newListTitle.trim() ? 'text-background' : 'text-gray-600'
                     }`}>
                     Create
                   </Text>
@@ -380,6 +466,20 @@ export function AddTaskBottomSheet({
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       setSelectedListId(list.id);
+                    }}
+                    onLongPress={() => {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                      // Call delete with list title for confirmation
+                      onDeleteList(list.id, list.title);
+                      // Update selected list if we're deleting the current one
+                      if (selectedListId === list.id) {
+                        const remainingLists = lists.filter(l => l.id !== list.id);
+                        if (remainingLists.length > 0) {
+                          setSelectedListId(remainingLists[0].id);
+                        } else {
+                          setSelectedListId('');
+                        }
+                      }
                     }}
                     className={`mr-2 px-4 py-3 rounded-xl border flex-row items-center gap-2 ${selectedListId === list.id
                         ? 'bg-primary/10 border-primary'
@@ -431,7 +531,7 @@ export function AddTaskBottomSheet({
               }`}
             activeOpacity={0.8}
           >
-            <Text className={`font-primary-bold text-base ${taskTitle.trim() && selectedListId && selectedDueDate ? 'text-midnight-black' : 'text-gray-600'
+            <Text className={`font-primary-bold text-base ${taskTitle.trim() && selectedListId && selectedDueDate ? 'text-background' : 'text-gray-600'
               }`}>
               Add Task
             </Text>

@@ -8,7 +8,9 @@ module.exports = {
     extend: {
       colors: {
         "primary": "#8F8F8F",
-        "midnight-black": "#0b0e0f",
+        "secondary": "#a855f7",
+        "background": "#0b0e0f",
+        "card": "#000000"
       },
       fontFamily: {
           'primary-regular': ['Poppins_400Regular'],

@@ -46,9 +46,9 @@ export function Header({ userName, selectedDay, today }: HeaderProps) {
       {/* Stats Badges */}
       <View className="flex-row items-center mt-2 gap-2">
         {/* Focus Health Score Badge */}
-        <View className="flex-row items-center bg-gray-900/50 px-4 py-2 rounded-lg border border-gray-800">
+        <View className="flex-row items-center bg-black px-4 py-2 rounded-lg">
           <View className={`w-2 h-2 rounded-full ${getHealthColor(focusHealthScore)} mr-2`} />
-          <Text className="text-sm font-primary-medium text-gray-300">
+          <Text className="text-sm font-primary-medium text-white">
             Focus Health: {focusHealthScore}% | {getHealthLabel(focusHealthScore)}
           </Text>
         </View>

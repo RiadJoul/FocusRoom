@@ -1,8 +1,9 @@
 import { TaskList } from '@/lib/stores/listStore';
 import { RecurrenceType, useTaskStore } from '@/lib/stores/taskStore';
+import { getQuickActions, getTaskSuggestions } from '@/lib/utils/taskSuggestions';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Modal,
     ScrollView,
@@ -18,6 +19,7 @@ interface RecurringTaskModalProps {
   lists: TaskList[];
   onClose: () => void;
   onCreateList: (title: string, icon: string) => Promise<TaskList | null>;
+  onDeleteList: (listId: string, listTitle: string) => Promise<void>;
 }
 
 const WEEKDAYS = [
@@ -37,7 +39,7 @@ const RECURRENCE_OPTIONS = [
   { type: 'yearly' as RecurrenceType, icon: 'calendar', label: 'Yearly', description: 'Repeats every year' },
 ];
 
-export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: RecurringTaskModalProps) {
+export function RecurringTaskModal({ visible, lists, onClose, onCreateList, onDeleteList}: RecurringTaskModalProps) {
   const addRecurringTask = useTaskStore((state) => state.addRecurringTask);
   
   const [title, setTitle] = useState('');
@@ -47,6 +49,12 @@ export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: Rec
   const [selectedDays, setSelectedDays] = useState<number[]>([1]); // Default: Monday
   const [interval, setInterval] = useState('1');
   const [hasEndDate, setHasEndDate] = useState(false);
+  
+  // AI Suggestions State
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [quickActions, setQuickActions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
   // List Creation State
     const [isCreatingList, setIsCreatingList] = useState(false);
     const [newListTitle, setNewListTitle] = useState('');
@@ -58,6 +66,30 @@ export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: Rec
       setSelectedListId(lists[0].id);
     }
   }, [lists, selectedListId]);
+
+  // Update suggestions when input or context changes
+  useEffect(() => {
+    const selectedList = lists.find(l => l.id === selectedListId);
+    const context = {
+      listName: selectedList?.title,
+      priority: priority,
+    };
+
+    // Get quick actions for empty input
+    if (title.length === 0) {
+      setQuickActions(getQuickActions(context));
+      setSuggestions([]);
+      setShowSuggestions(false);
+    } else if (title.length >= 2) {
+      // Get suggestions for partial input
+      const newSuggestions = getTaskSuggestions(title, context);
+      setSuggestions(newSuggestions);
+      setShowSuggestions(newSuggestions.length > 0);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [title, selectedListId, priority, lists]);
   
   const handleSave = async () => {
     if (!title.trim() || !selectedListId) return;
@@ -138,7 +170,7 @@ export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: Rec
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View className="flex-1 bg-[#0C0C0D]">
+      <View className="flex-1 bg-background">
         {/* Header */}
         <View className="px-6 py-6 border-b border-gray-800">
           <View className="flex-row items-center justify-between mb-2">
@@ -180,6 +212,57 @@ export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: Rec
               autoFocus
               editable={lists.length > 0 || isCreatingList}
             />
+
+            {/* Quick Actions (shown when input is empty) */}
+            {title.length === 0 && quickActions.length > 0 && (
+              <View className="mt-2">
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {quickActions.map((action, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setTitle(action + ' ');
+                      }}
+                      className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-primary font-primary-medium text-sm">{action}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Smart Suggestions */}
+            {showSuggestions && suggestions.length > 0 && (
+              <View className="mt-2 bg-gray-900/80 border border-gray-800 rounded-xl overflow-hidden">
+                {suggestions.map((suggestion, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setTitle(suggestion);
+                      setShowSuggestions(false);
+                    }}
+                    className={`px-4 py-3 flex-row items-center ${
+                      index < suggestions.length - 1 ? 'border-b border-gray-800' : ''
+                    }`}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="bulb-outline" size={16} color="#9CA3AF" />
+                    <Text className="text-gray-300 font-primary-regular text-sm ml-2 flex-1">
+                      {suggestion}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={14} color="#6B7280" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
           
           {/* List Selection */}
@@ -245,7 +328,7 @@ export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: Rec
                     }`}
                   activeOpacity={0.7}
                 >
-                  <Text className={`font-primary-semibold text-sm ${newListTitle.trim() ? 'text-midnight-black' : 'text-gray-600'
+                  <Text className={`font-primary-semibold text-sm ${newListTitle.trim() ? 'text-background' : 'text-gray-600'
                     }`}>
                     Create
                   </Text>
@@ -262,6 +345,20 @@ export function RecurringTaskModal({ visible, lists, onClose, onCreateList}: Rec
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       setSelectedListId(list.id);
+                    }}
+                    onLongPress={() => {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                      // Call delete with list title for confirmation
+                      onDeleteList(list.id, list.title);
+                      // Update selected list if we're deleting the current one
+                      if (selectedListId === list.id) {
+                        const remainingLists = lists.filter(l => l.id !== list.id);
+                        if (remainingLists.length > 0) {
+                          setSelectedListId(remainingLists[0].id);
+                        } else {
+                          setSelectedListId('');
+                        }
+                      }
                     }}
                     className={`mr-2 px-4 py-3 rounded-xl border flex-row items-center gap-2 ${selectedListId === list.id
                         ? 'bg-primary/10 border-primary'

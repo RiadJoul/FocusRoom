@@ -185,7 +185,7 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
     );
 
     return {
-      opacity: progress * 0.3,
+      opacity: progress * 1,
     };
   });
 
@@ -198,7 +198,7 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
     );
 
     return {
-      opacity: progress * 0.3,
+      opacity: progress * 1,
     };
   });
 
@@ -210,7 +210,7 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
         className="absolute left-0 top-0 bottom-0 w-24 bg-primary rounded-2xl flex items-center justify-center"
       >
         <Animated.View style={checkIconStyle}>
-          <Text className="text-3xl">✓</Text>
+          <Ionicons name="checkmark-sharp" size={24} color="black" />
         </Animated.View>
       </Animated.View>
 
@@ -220,7 +220,7 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
         className="absolute right-0 top-0 bottom-0 w-24 bg-red-500 rounded-2xl flex items-center justify-center"
       >
         <Animated.View style={deleteIconStyle}>
-          <Text className="text-3xl">🗑️</Text>
+          <Ionicons name="trash-outline" size={24} color="black" />
         </Animated.View>
       </Animated.View>
 
@@ -228,14 +228,14 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
       <GestureDetector gesture={composedGestures}>
         <Animated.View
           style={animatedStyle}
-          className={`bg-gray-900/50 border border-gray-800 rounded-2xl p-4 flex-row items-center`}
+          className={`bg-card rounded-2xl p-4 flex-row items-center`}
         >
           {/* Checkbox */}
           <View className={`w-7 h-7 rounded-full border-2 mr-4 items-center justify-center ${
             task.status === 'completed' ? 'border-primary bg-primary' : 'border-gray-700'
           }`}>
             {task.status === 'completed' && (
-              <Text className="text-midnight-black font-primary-bold">✓</Text>
+              <Text className="text-background font-primary-bold">✓</Text>
             )}
           </View>
           

@@ -1,25 +1,31 @@
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
-
+  const insets = useSafeAreaInsets();
+  
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#8F8F8F',
+        tabBarActiveTintColor: '#ffffff',
         tabBarInactiveTintColor: '#888888',
         headerShown: false,
         tabBarStyle: {
           backgroundColor: '#0A0A0A',
           borderTopColor: '#262626',
-          height: 70,
-          paddingBottom: 10,
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom,
           paddingTop: 10,
         },
         animation: 'shift',
         sceneStyle: {
           backgroundColor: '#0A0A0A',
+        },
+        
+        tabBarLabelStyle: {
+          paddingTop: 5,
         },
       }}
     >

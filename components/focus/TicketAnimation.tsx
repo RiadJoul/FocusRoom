@@ -1,6 +1,6 @@
 import { Task } from '@/lib/stores/taskStore';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect } from 'react';
+import React, { use, useEffect } from 'react';
 import { Modal, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { PlanetTrip } from './PlanetTrips';
 import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useListStore } from '@/lib/stores/listStore';
 
 interface TicketAnimationProps {
   visible: boolean;
@@ -27,6 +28,12 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
   const ticketRotate = useSharedValue(0);
   const ticketTranslateY = useSharedValue(0);
   const scissorsX = useSharedValue(0);
+
+  //list of the task
+  const lists = useListStore((state) => state.lists);
+  const getTaskList = (taskListId: string) => {
+    return lists.find((list) => list.id === taskListId);
+  }
 
   useEffect(() => {
     if (visible) {
@@ -150,7 +157,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
             <Animated.View style={leftPartStyle}>
               {/* Header Gradient Bar */}
               <View style={{ 
-                backgroundColor: '#8F8F8F', 
+                backgroundColor: '#000000', 
                 paddingHorizontal: 24, 
                 paddingVertical: 16,
                 borderTopLeftRadius: 20,
@@ -257,7 +264,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                         marginRight: 8 
                       }} />
                       <Text className="text-gray-700 font-primary-medium text-sm flex-1" numberOfLines={1}>
-                        {task.title}
+                        {task.title} 
                       </Text>
                     </View>
                   ))}

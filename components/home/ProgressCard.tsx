@@ -16,7 +16,7 @@ export function ProgressCard({ selectedDay, today, completedCount, totalCount }:
 
   return (
     <View className="pt-6">
-      <View className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5">
+      <View className="bg-card rounded-2xl p-5">
         <Text className="text-white font-primary-bold text-base mb-3">
           {isSameDay(selectedDay, today) ? "Today's" : formatSelectedDate(selectedDay, today)} Progress
         </Text>

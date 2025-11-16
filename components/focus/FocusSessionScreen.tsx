@@ -7,8 +7,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Image, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
-  FadeIn,
-  FadeInDown,
+    FadeIn,
+    FadeInDown,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Model3DViewer } from './Model3DViewer';
@@ -59,7 +59,6 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
           sound = loadedSound;
           soundRef.current = loadedSound;
           await loadedSound.playAsync();
-          console.log('🔊 Ambient sound started');
         } catch (soundError) {
           console.warn('⚠️ Space rumble sound file not found. Add space-rumble.mp3 to assets/sounds/');
           console.warn('The focus session will work without sound.');
@@ -76,7 +75,6 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
       if (soundRef.current) {
         soundRef.current.stopAsync();
         soundRef.current.unloadAsync();
-        console.log('🔇 Ambient sound stopped');
       }
     };
   }, []);
@@ -231,13 +229,13 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
   if (sessionEnded) {
     const elapsedSeconds = trip.duration - remainingSeconds;
     return (
-      <SafeAreaView className="flex-1 bg-midnight-black">
+      <SafeAreaView className="flex-1 bg-background">
         <Animated.View entering={FadeIn.duration(600)} className="flex-1 items-center justify-center px-6">
           {/* Completion Animation */}
           <Animated.View entering={FadeInDown.delay(200)} className="items-center mb-8">
             <View className="mb-6">
               <Image
-                source={require('../../assets/images/logo.png')}
+                source={require('../../assets/icons/ios-light.png')}
                 style={{ width: 60, height: 60 }}
                
               />
@@ -286,7 +284,7 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
                     }`}
                   >
                     {isCompleted && (
-                      <Text className="text-midnight-black font-primary-bold text-sm">✓</Text>
+                      <Text className="text-background font-primary-bold text-sm">✓</Text>
                     )}
                   </View>
                   <Text className={`flex-1 font-primary-medium ${isCompleted ? 'text-white' : 'text-gray-400'}`}>
@@ -309,7 +307,7 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
             >
               <Text
                 className={`font-primary-bold text-base ${
-                  completedTaskIds.size > 0 ? 'text-midnight-black' : 'text-gray-600'
+                  completedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
                 }`}
               >
                 Mark Complete & Finish

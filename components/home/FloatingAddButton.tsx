@@ -45,7 +45,7 @@ export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonPro
               exiting={FadeOut.duration(150)}
             >
               <TouchableOpacity 
-                className="bg-gray-800 rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
+                className="bg-card rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
                 activeOpacity={0.8}
                 onPress={handleRecurring}
                 style={{
@@ -75,12 +75,12 @@ export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonPro
               exiting={FadeOut.duration(150)}
             >
               <TouchableOpacity 
-                className="bg-gray-800 rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
+                className="bg-card rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
                 activeOpacity={0.8}
                 onPress={handleQuickAdd}
                 style={{
                   minWidth: 200,
-                  shadowColor: '#000',
+                  shadowColor: '#3B82F6',
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: 0.3,
                   shadowRadius: 8,

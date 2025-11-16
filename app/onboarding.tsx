@@ -21,11 +21,6 @@ const slides = [
         buttonText: 'Yes, how can i fix it?',
     },
     {
-        question: 'Hyperfocus is when you lock in completely, blocking out distractions and staying deeply engaged.',
-        highlightWord: 'Hyperfocus',
-        buttonText: 'How can I get hyperfocused?',
-    },
-    {
         question: "That's why we created FocusRoom",
         highlightWord: 'FocusRoom',
         buttonText: 'Get Started',
@@ -283,7 +278,8 @@ export default function Onboarding() {
                     </View>
                     {isLastSlide && (
                         <Animated.Image
-                            source={require('../assets/images/icon.png')}
+                            source={require('../assets/icons/ios-light.png')}
+                            className="mt-5 rounded-lg"
                             style={{
                                 width: 60,
                                 height: 60,
