@@ -26,6 +26,7 @@ export default function Profile() {
 
   // Calculate trial days left
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
 
   useEffect(() => {
     if (user?.created_at) {
@@ -121,29 +122,40 @@ export default function Profile() {
   };
 
   async function presentPaywall(): Promise<boolean> {
-    // Track paywall opened
-    const openTime = Date.now();
-    await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
+    // Prevent re-entrancy
+    if (isPresentingPaywall) return false;
+    setIsPresentingPaywall(true);
 
-    const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
+    try {
+      // Track paywall opened
+      const openTime = Date.now();
+      await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
 
-    // Track paywall closed
-    const closeTime = Date.now();
-    const durationSeconds = Math.round((closeTime - openTime) / 1000);
-    await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
+      const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
 
-    switch (paywallResult) {
-      case PAYWALL_RESULT.NOT_PRESENTED:
-      case PAYWALL_RESULT.ERROR:
-      case PAYWALL_RESULT.CANCELLED:
-        return false;
-      case PAYWALL_RESULT.PURCHASED:
-        await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
-        return true;
-      case PAYWALL_RESULT.RESTORED:
-        return true;
-      default:
-        return false;
+      // Track paywall closed
+      const closeTime = Date.now();
+      const durationSeconds = Math.round((closeTime - openTime) / 1000);
+      await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
+
+      switch (paywallResult) {
+        case PAYWALL_RESULT.NOT_PRESENTED:
+        case PAYWALL_RESULT.ERROR:
+        case PAYWALL_RESULT.CANCELLED:
+          return false;
+        case PAYWALL_RESULT.PURCHASED:
+          await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
+          return true;
+        case PAYWALL_RESULT.RESTORED:
+          return true;
+        default:
+          return false;
+      }
+    } catch (error) {
+      console.error('Paywall error:', error);
+      return false;
+    } finally {
+      setIsPresentingPaywall(false);
     }
   }
 
@@ -286,11 +298,9 @@ export default function Profile() {
             {/* Days Left Display */}
             <Text className="text-white text-center font-primary-bold text-2xl mb-1">
               {daysLeft && daysLeft > 0 ? (
-                <>
-                  <Text className="text-primary">{daysLeft} day{daysLeft === 1 ? '' : 's'} remaining</Text>
-                </>
+                `${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining`
               ) : (
-                <Text className='text-primary'>Last day of trial!</Text>
+                'Last day of trial!'
               )}
             </Text>
 

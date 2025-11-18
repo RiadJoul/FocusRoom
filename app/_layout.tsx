@@ -10,14 +10,15 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { Linking, Platform } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
+import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Purchases from 'react-native-purchases';
 import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
 import { analytics, Events } from '../lib/analytics';
-import { usePremiumSync } from '../lib/hooks/usePremiumSync';
+
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
 
@@ -29,7 +30,6 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const user = useUserStore((state) => state.user);
-  usePremiumSync(user?.id);
   const router = useRouter();
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -44,6 +44,8 @@ export default function RootLayout() {
 
   // Trial logic
   const [trialExpired, setTrialExpired] = useState(false);
+  const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     if (user?.created_at) {
@@ -57,41 +59,106 @@ export default function RootLayout() {
   }, [user?.created_at]);
 
   const REVENUECAT_APPLE_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
+  const [isRevenueCatReady, setIsRevenueCatReady] = useState(false);
 
+  // Configure RevenueCat once on mount
   useEffect(() => {
-    Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
-    // Configure Purchases (RevenueCat)
-    if (Platform.OS === 'ios') {
+    if (Platform.OS === 'ios' && REVENUECAT_APPLE_API_KEY) {
+      Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
       Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
+      setIsRevenueCatReady(true);
     }
   }, []);
 
+  // Sync premium status only when user is authenticated
+  useEffect(() => {
+    if (!user?.id) return;
 
-   async function presentPaywall(): Promise<boolean> {
-    // Track paywall opened
-    const openTime = Date.now();
-    await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
+    let isMounted = true;
 
-    const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
+    const syncPremiumStatus = async () => {
+      try {
+        const customerInfo = await Purchases.getCustomerInfo();
+        const isPremium = customerInfo.activeSubscriptions.length > 0;
 
-    // Track paywall closed
-    const closeTime = Date.now();
-    const durationSeconds = Math.round((closeTime - openTime) / 1000);
-    await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
+        if (isMounted) {
+          // Update Supabase
+          await supabase
+            .from('users')
+            .update({ is_premium: isPremium })
+            .eq('id', user.id);
 
-    switch (paywallResult) {
-      case PAYWALL_RESULT.NOT_PRESENTED:
-      case PAYWALL_RESULT.ERROR:
-      case PAYWALL_RESULT.CANCELLED:
-        presentPaywall();
-        return false;
-      case PAYWALL_RESULT.PURCHASED:
-        await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
-        return true;
-      case PAYWALL_RESULT.RESTORED:
-        return true;
-      default:
-        return false;
+          // Update local store
+          useUserStore.getState().setUser({
+            ...useUserStore.getState().user,
+            is_premium: isPremium,
+          });
+        }
+      } catch (err) {
+        console.error('Premium sync error:', err);
+      }
+    };
+
+    // Sync once on mount
+    syncPremiumStatus();
+
+    // Listen for updates
+    Purchases.addCustomerInfoUpdateListener(syncPremiumStatus);
+
+    return () => {
+      isMounted = false;
+      Purchases.removeCustomerInfoUpdateListener(syncPremiumStatus);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const offline = !state.isConnected || state.isInternetReachable === false;
+      setIsOffline(offline);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+
+  async function presentPaywall(): Promise<boolean> {
+    // Prevent re-entrancy and ensure RevenueCat is ready
+    if (isPresentingPaywall || !isRevenueCatReady) return false;
+    setIsPresentingPaywall(true);
+
+    try {
+      // Track paywall opened
+      const openTime = Date.now();
+      await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
+
+      const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
+
+      // Track paywall closed
+      const closeTime = Date.now();
+      const durationSeconds = Math.round((closeTime - openTime) / 1000);
+      await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
+
+      switch (paywallResult) {
+        case PAYWALL_RESULT.NOT_PRESENTED:
+        case PAYWALL_RESULT.ERROR:
+        case PAYWALL_RESULT.CANCELLED:
+          presentPaywall();
+          return false;
+        case PAYWALL_RESULT.PURCHASED:
+          await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
+          return true;
+        case PAYWALL_RESULT.RESTORED:
+          return true;
+        default:
+          return false;
+      }
+    } catch (error) {
+      console.error('Paywall error:', error);
+      return false;
+    } finally {
+      setIsPresentingPaywall(false);
     }
   }
 
@@ -269,17 +336,23 @@ export default function RootLayout() {
   }, [fontsLoaded, checking]);
 
   useEffect(() => {
-    if (trialExpired && user.is_premium === false) {
+    if (trialExpired && user?.is_premium === false) {
       presentPaywall();
     }
   }, [trialExpired]);
 
+  const handleRetryConnection = () => {
+    NetInfo.fetch().then((state) => {
+      const offline = !state.isConnected || state.isInternetReachable === false;
+      setIsOffline(offline);
+    });
+  };
 
   if (!fontsLoaded) {
     return null;
   }
 
-  return (  
+  return (
     <SafeAreaProvider>
       <Stack screenOptions={
         {
@@ -290,7 +363,54 @@ export default function RootLayout() {
       }>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
+      {isOffline && (
+        <View style={[StyleSheet.absoluteFillObject, offlineOverlayStyles.container]}>
+          <Text style={offlineOverlayStyles.title}>
+            You're Offline
+          </Text>
+          <Text style={offlineOverlayStyles.subtitle}>
+            FocusRoom needs an internet connection to keep everything in sync. Please reconnect to continue.
+          </Text>
+          <Pressable onPress={handleRetryConnection} style={offlineOverlayStyles.button}>
+            <Text style={offlineOverlayStyles.buttonText}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
       <StatusBar style="light" />
     </SafeAreaProvider>
   );
 }
+
+const offlineOverlayStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#0A0A0A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  title: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: '#A1A1A1',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  button: {
+    marginTop: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+  },
+  buttonText: {
+    color: '#0A0A0A',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});

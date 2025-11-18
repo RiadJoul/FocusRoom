@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.anonymous.focusRoom",
       "appleTeamId": "CRW66LT2G4",
       "icon": {
