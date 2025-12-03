@@ -4,15 +4,11 @@ import { StyleSheet } from 'react-native';
 import * as THREE from 'three';
 
 interface Model3DViewerProps {
-  width?: number;
-  height?: number;
   autoRotate?: boolean;
   timerSeconds?: number;
 }
 
-export function Model3DViewer({ 
-  width, 
-  height,
+export function Model3DViewer({
   autoRotate = false,
   timerSeconds = 0
 }: Model3DViewerProps) {
@@ -1046,7 +1042,7 @@ export function Model3DViewer({
     <GLView
       style={[
         styles.glView, 
-        width && height ? { width, height } : { flex: 1 }
+        { flex: 1 }
       ]}
       onContextCreate={onContextCreate}
     />

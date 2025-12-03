@@ -1,4 +1,5 @@
 import { analytics, Events } from '@/lib/analytics';
+import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { useUserStore } from '@/lib/stores/userStore';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -45,43 +46,18 @@ export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonPro
   }
 
   async function presentPaywall(): Promise<boolean> {
-      // Prevent re-entrancy
-      if (isPresentingPaywall) return false;
-      setIsPresentingPaywall(true);
-  
-      try {
-        // Track paywall opened
-        const openTime = Date.now();
-        await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
-  
-        const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
-  
-        // Track paywall closed
-        const closeTime = Date.now();
-        const durationSeconds = Math.round((closeTime - openTime) / 1000);
-        await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
-  
-        switch (paywallResult) {
-          case PAYWALL_RESULT.NOT_PRESENTED:
-          case PAYWALL_RESULT.ERROR:
-          case PAYWALL_RESULT.CANCELLED:
-            return false;
-          case PAYWALL_RESULT.PURCHASED:
-            await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
-            return true;
-          case PAYWALL_RESULT.RESTORED:
-            return true;
-          default:
-            return false;
-        }
-      } catch (error) {
-        console.error('Paywall error:', error);
-        return false;
-      } finally {
-        setIsPresentingPaywall(false);
-      }
-    }
+    if (isPresentingPaywall) return false;
+    setIsPresentingPaywall(true);
 
+    try {
+      return await presentPaywallOnce({
+        userId: user?.id,
+        source: 'floating_recurring_button',
+      });
+    } finally {
+      setIsPresentingPaywall(false);
+    }
+  }
     return (
       <View className="absolute bottom-8 right-6">
         <View className="items-end">

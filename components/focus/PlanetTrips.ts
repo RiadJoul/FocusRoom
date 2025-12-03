@@ -6,6 +6,7 @@ export interface PlanetTrip {
   distance_km: number; // distance in kilometers
   color: string;
   description: string;
+  image: any;
 }
 
 export const PLANET_TRIPS: PlanetTrip[] = [
@@ -17,6 +18,7 @@ export const PLANET_TRIPS: PlanetTrip[] = [
     distance_km: 384_400,
     color: '#A0AEC0', // soft lunar gray-blue
     description: 'Quick focus boost 🌙',
+    image: require('../../assets/images/planets/moon.jpg'),
   },
   {
     id: 'earth-mars',
@@ -26,6 +28,7 @@ export const PLANET_TRIPS: PlanetTrip[] = [
     distance_km: 225_000_000,
     color: '#FF6B6B', // warm coral red
     description: 'Standard focus flight 🔥',
+    image: require('../../assets/images/planets/mars.jpg'),
   },
   {
     id: 'earth-jupiter',
@@ -35,6 +38,7 @@ export const PLANET_TRIPS: PlanetTrip[] = [
     distance_km: 628_000_000,
     color: '#F5A623', // golden amber
     description: 'Deep work orbit 🪐',
+    image: require('../../assets/images/planets/jupiter.jpg'),
   },
   {
     id: 'earth-saturn',
@@ -44,6 +48,17 @@ export const PLANET_TRIPS: PlanetTrip[] = [
     distance_km: 1_200_000_000,
     color: '#00B7FF', // soft lilac ring color
     description: 'Extended flow mission 💫',
+    image: require('../../assets/images/planets/saturn.jpg'),
+  },
+  {
+    id: 'earth-neptune',
+    from: 'Earth',
+    to: 'Neptune',
+    duration: 180 * 60, // 3 hours
+    distance_km: 4_300_000_000,
+    color: '#4C51BF', // deep ocean blue
+    description: 'Marathon focus voyage 🌊',
+    image: require('../../assets/images/planets/neptune.jpg'),
   },
 ];
 

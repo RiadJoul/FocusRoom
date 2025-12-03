@@ -39,12 +39,13 @@ export function Header({ userName, selectedDay, today }: HeaderProps) {
   return (
     <View className="pt-2">
       <Text className="text-2xl font-primary-bold text-white leading-tight">
-        {getGreeting()},{' '}
-        <Text className="text-primary">{userName}</Text>
+        {getGreeting()}
+        <Text className="text-primary">{userName ? ", " + userName : ''}</Text>
       </Text>
-      
+
       {/* Stats Badges */}
-      <View className="flex-row items-center mt-2 gap-2">
+      {
+        user?.is_premium && <View className="flex-row items-center mt-2 gap-2">
         {/* Focus Health Score Badge */}
         <View className="flex-row items-center bg-black px-4 py-2 rounded-lg">
           <View className={`w-2 h-2 rounded-full ${getHealthColor(focusHealthScore)} mr-2`} />
@@ -53,6 +54,8 @@ export function Header({ userName, selectedDay, today }: HeaderProps) {
           </Text>
         </View>
       </View>
+      }
+      
 
     </View>
   );

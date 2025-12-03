@@ -13,13 +13,12 @@ import React, { useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Purchases from 'react-native-purchases';
-import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
+import RevenueCatUI from "react-native-purchases-ui";
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
 import { analytics, Events } from '../lib/analytics';
-import { getPlanTypeFromRevenueCat } from '../lib/revenuecat';
-
+import { presentPaywallOnce } from '../lib/paywall/presentPaywall';
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
 
@@ -28,6 +27,9 @@ export const unstable_settings = {
 };
 
 SplashScreen.preventAutoHideAsync();
+
+// Guard to ensure we only track APP_OPENED once per app run
+let hasTrackedAppOpened = false;
 
 export default function RootLayout() {
   const user = useUserStore((state) => state.user);
@@ -71,46 +73,20 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Sync premium status only when user is authenticated
+  // Link RevenueCat customer to Supabase user.id (app_user_id)
   useEffect(() => {
-    if (!user?.id) return;
+    if (!isRevenueCatReady || !user?.id || Platform.OS !== 'ios') return;
 
-    let isMounted = true;
-
-    const syncPremiumStatus = async () => {
+    const logInToRevenueCat = async () => {
       try {
-        const customerInfo = await Purchases.getCustomerInfo();
-        const isPremium = customerInfo.activeSubscriptions.length > 0;
-
-        if (isMounted) {
-          // Update Supabase
-          await supabase
-            .from('users')
-            .update({ is_premium: isPremium })
-            .eq('id', user.id);
-
-          // Update local store
-          useUserStore.getState().setUser({
-            ...useUserStore.getState().user,
-            is_premium: isPremium,
-          });
-        }
-      } catch (err) {
-        console.error('Premium sync error:', err);
+        await Purchases.logIn(user.id);
+      } catch (error) {
+        console.error('RevenueCat logIn error:', error);
       }
     };
 
-    // Sync once on mount
-    syncPremiumStatus();
-
-    // Listen for updates
-    Purchases.addCustomerInfoUpdateListener(syncPremiumStatus);
-
-    return () => {
-      isMounted = false;
-      Purchases.removeCustomerInfoUpdateListener(syncPremiumStatus);
-    };
-  }, [user?.id]);
+    logInToRevenueCat();
+  }, [isRevenueCatReady, user?.id]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -125,45 +101,14 @@ export default function RootLayout() {
 
 
   async function presentPaywall(): Promise<boolean> {
-    // Prevent re-entrancy and ensure RevenueCat is ready
     if (isPresentingPaywall || !isRevenueCatReady) return false;
     setIsPresentingPaywall(true);
 
     try {
-      // Track paywall opened
-      const openTime = Date.now();
-      await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
-
-      const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
-
-      // Track paywall closed
-      const closeTime = Date.now();
-      const durationSeconds = Math.round((closeTime - openTime) / 1000);
-      await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
-
-      switch (paywallResult) {
-        case PAYWALL_RESULT.NOT_PRESENTED:
-        case PAYWALL_RESULT.ERROR:
-        case PAYWALL_RESULT.CANCELLED:
-          presentPaywall();
-          return false;
-        case PAYWALL_RESULT.PURCHASED:
-          {
-            const planType = await getPlanTypeFromRevenueCat();
-            await analytics.track(Events.SUBSCRIPTION_STARTED, {
-              user_id: user?.id,
-              plan_type: planType ?? 'unknown',
-            });
-          }
-          return true;
-        case PAYWALL_RESULT.RESTORED:
-          return true;
-        default:
-          return false;
-      }
-    } catch (error) {
-      console.error('Paywall error:', error);
-      return false;
+      return await presentPaywallOnce({
+        userId: user?.id,
+        source: 'root_layout_trial',
+      });
     } finally {
       setIsPresentingPaywall(false);
     }
@@ -177,7 +122,10 @@ export default function RootLayout() {
         // Initialize analytics
         await analytics.init();
         console.log('✅ Mixpanel ready, tracking app open');
-        await analytics.track(Events.APP_OPENED);
+        if (!hasTrackedAppOpened) {
+          hasTrackedAppOpened = true;
+          await analytics.track(Events.APP_OPENED);
+        }
 
       } catch (error) {
         console.error('❌ Failed to initialize services:', error);

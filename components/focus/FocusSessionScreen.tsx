@@ -4,14 +4,17 @@ import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Image, Text, TouchableOpacity, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import Animated, {
-    FadeIn,
-    FadeInDown,
+  FadeIn,
+  FadeInDown,
+  FadeInLeft,
+  FadeOutLeft,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Model3DViewer } from './Model3DViewer';
+import { Model3DViewer } from './Space3DViewer';
+import { SpaceMapViewer } from './SpaceMapViewer';
 import { PlanetTrip, formatDistance } from './PlanetTrips';
 
 interface FocusSessionScreenProps {
@@ -19,15 +22,24 @@ interface FocusSessionScreenProps {
   trip: PlanetTrip;
   onEndSession: (duration: number, tasksCompleted: string[]) => void;
   onMarkTasksComplete: (taskIds: string[]) => void;
+  mode?: '3d' | 'map';
 }
 
 
-export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksComplete }: FocusSessionScreenProps) {
+export function FocusSessionScreen({
+  tasks,
+  trip,
+  onEndSession,
+  onMarkTasksComplete,
+  mode = '3d',
+}: FocusSessionScreenProps) {
   const [remainingSeconds, setRemainingSeconds] = useState(trip.duration);
   const [isPaused, setIsPaused] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [isMuted, setIsMuted] = useState(false);
+  const [allTasksSwiped, setAllTasksSwiped] = useState(false);
+  const [showTaskOverlay, setShowTaskOverlay] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
 
@@ -192,24 +204,35 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
   };
 
   const handleCompleteTask = (taskId: string) => {
-    setCompletedTaskIds(prev => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setCompletedTaskIds((prev) => {
       const newSet = new Set(prev);
       newSet.add(taskId);
-      
-      // Check if all tasks are now completed
+
+      // If every task for this session has been swiped right, trigger finish
       if (newSet.size === tasks.length) {
-        // Auto-end session after a short delay
-        setTimeout(() => {
-          setSessionEnded(true);
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-          }
-        }, 500);
+        setAllTasksSwiped(true);
       }
-      
+
       return newSet;
     });
   };
+
+  // Finish session in a side-effect when all tasks have been swiped
+  useEffect(() => {
+    if (!allTasksSwiped) return;
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    const completedIds = Array.from(completedTaskIds);
+    const elapsedSeconds = trip.duration - remainingSeconds;
+    onMarkTasksComplete(completedIds);
+    onEndSession(elapsedSeconds, completedIds);
+    setSessionEnded(true);
+    router.back();
+  }, [allTasksSwiped]);
 
   const handleFinishAndMarkComplete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -330,19 +353,20 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
   return (
     <GestureHandlerRootView className="flex-1">
       <View className="flex-1">
-        {/* 3D Scene - Fullscreen Background */}
-        <Animated.View 
-          entering={FadeIn.delay(300)} 
-          className="absolute inset-0"
-          style={{ width: '100%', height: '100%' }}
-        >
-          <Model3DViewer 
-            width={undefined}
-            height={undefined}
-            autoRotate={!isPaused}
-            timerSeconds={remainingSeconds}
-          />
-        </Animated.View>
+        {/* Background visual (3D or space map) */}
+        {mode === 'map' ? (
+          <View className="absolute inset-0">
+            <SpaceMapViewer />
+          </View>
+        ) : (
+          <Animated.View
+            entering={FadeIn.delay(300)}
+            className="absolute inset-0"
+            style={{ width: '100%', height: '100%' }}
+          >
+            <Model3DViewer autoRotate={!isPaused} timerSeconds={remainingSeconds} />
+          </Animated.View>
+        )}
 
         {/* UI Overlay */}
         <SafeAreaView className="flex-1" style={{ backgroundColor: 'transparent' }}>
@@ -408,6 +432,18 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
                   color={isMuted ? '#9CA3AF' : '#FFFFFF'} 
                 />
               </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setShowTaskOverlay((prev) => !prev)}
+                className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showTaskOverlay ? 'eye' : 'eye-off'}
+                  size={22}
+                  color={showTaskOverlay ? '#FFFFFF' : '#9CA3AF'}
+                />
+              </TouchableOpacity>
               
               {isPaused && (
                 <TouchableOpacity
@@ -438,19 +474,110 @@ export function FocusSessionScreen({ tasks, trip, onEndSession, onMarkTasksCompl
         </Animated.View>
 
         {/* Distance Remaining - Bottom Left */}
-        <Animated.View 
+        <Animated.View
           entering={FadeIn.delay(300)}
           className="absolute bottom-8 left-6"
         >
           <View className="bg-black/60 px-4 py-2 rounded-xl border border-gray-700/30">
-            <Text className="text-gray-400 font-primary-medium text-xs">Distance Left</Text>
+            <Text className="text-gray-400 font-primary-medium text-xs">
+              Distance Left
+            </Text>
             <Text className="text-white font-primary-bold text-lg mt-1">
               {formatDistance(remainingDistance)}
             </Text>
           </View>
         </Animated.View>
 
-      </SafeAreaView>
+        {/* Tasks drawer - swipe right to complete */}
+        {tasks.length > 0 && showTaskOverlay && (
+          <Animated.View
+            entering={FadeInLeft.delay(300)}
+            exiting={FadeOutLeft.duration(200)}
+            className="absolute left-0 top-1/2 -translate-y-1/2"
+            style={{ width: 260 }}
+          >
+            <View
+              className="rounded-r-3xl rounded-l-none px-3 py-3 border border-primary/40 border-l-0"
+              style={{
+                backgroundColor: '#020617EE',
+                shadowColor: '#4F46E5',
+                shadowOpacity: 0.35,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 0 },
+              }}
+            >
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center flex-1 pr-2">
+                  <View className="w-7 h-7 rounded-full bg-primary/20 items-center justify-center mr-2">
+                    <MaterialCommunityIcons
+                      name="gesture-swipe-right"
+                      size={16}
+                      color="#E5E7EB"
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-100 font-primary-semibold text-xs tracking-widest">
+                      MISSION TASKS
+                    </Text>
+                    <Text className="text-gray-500 font-primary-medium text-[10px]">
+                      Swipe right to confirm
+                    </Text>
+                  </View>
+                </View>
+                <View className="px-2 py-1 rounded-full bg-primary/15 border border-primary/40">
+                  <Text className="text-primary font-primary-semibold text-[10px]">
+                    {completedTaskIds.size}/{tasks.length}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ maxHeight: 150 }}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingRight: 4 }}
+                >
+                  {tasks.map((task) => {
+                    const isCompleted = completedTaskIds.has(task.id);
+                    if (isCompleted) return null;
+
+                    return (
+                      <Swipeable
+                        key={task.id}
+                        overshootLeft={false}
+                        overshootRight={false}
+                        onSwipeableOpen={() => handleCompleteTask(task.id)}
+                        renderLeftActions={() => (
+                          <View className="flex-1 bg-primary/40 justify-center rounded-xl ml-1 h-8">
+                            <Text className="text-background font-primary-bold text-xs pl-4 tracking-wide">
+                              Complete
+                            </Text>
+                          </View>
+                        )}
+                      >
+                        <View className="mb-2 px-3 py-2 rounded-xl bg-slate-900/95 border border-slate-700/80 flex-row items-center">
+                          <View
+                            className="w-3 h-3 rounded-lg mr-2 bg-secondary/60"
+                            
+                          />
+                          <View className="flex-1">
+                            <Text
+                              className="text-white font-primary-medium text-xs"
+                              numberOfLines={1}
+                            >
+                              {task.title}
+                            </Text>
+                          </View>
+                        </View>
+                      </Swipeable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
+        </SafeAreaView>
       </View>
     </GestureHandlerRootView>
   );

@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as WebBrowser from 'expo-web-browser';
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL as string;
-const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_KEY as string;
+export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL as string;
+export const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_KEY as string;
 
 WebBrowser.maybeCompleteAuthSession();
 

@@ -8,13 +8,14 @@ export type TaskList = {
   user_id: string;
   title: string;
   icon?: string;
+  color?: string;
   created_at: string;
 };
 
 type ListState = {
   lists: TaskList[];
   loading: boolean;
-  addList: (title: string, icon?: string) => Promise<TaskList | null>;
+  addList: (title: string, icon?: string, color?: string) => Promise<TaskList | null>;
   removeList: (id: string) => Promise<void>;
   updateList: (id: string, title: string) => Promise<void>;
   setLists: (lists: TaskList[]) => void;
@@ -44,7 +45,7 @@ export const useListStore = create<ListState>()(
         }
       },
       
-      addList: async (title: string, icon?: string) => {
+      addList: async (title: string, icon?: string, color?: string) => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) throw new Error('No user');
@@ -53,6 +54,7 @@ export const useListStore = create<ListState>()(
             user_id: user.id,
             title,
             icon: icon || 'list-outline',
+            color: color,
             created_at: new Date().toISOString(),
           };
           
