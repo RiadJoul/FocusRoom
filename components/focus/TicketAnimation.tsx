@@ -4,11 +4,12 @@ import React, { use, useEffect } from 'react';
 import { Modal, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-    Easing,
-    runOnJS,
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming
 } from 'react-native-reanimated';
 import { PlanetTrip } from './PlanetTrips';
 import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -25,9 +26,13 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
   const scale = useSharedValue(0.3);
   const opacity = useSharedValue(0);
   const cutProgress = useSharedValue(0);
-  const ticketRotate = useSharedValue(0);
-  const ticketTranslateY = useSharedValue(0);
   const scissorsX = useSharedValue(0);
+  const leftPieceOffsetX = useSharedValue(0);
+  const leftPieceOffsetY = useSharedValue(0);
+  const leftPieceRotate = useSharedValue(0);
+  const rightPieceOffsetX = useSharedValue(0);
+  const rightPieceOffsetY = useSharedValue(0);
+  const rightPieceRotate = useSharedValue(0);
 
   //list of the task
   const lists = useListStore((state) => state.lists);
@@ -40,25 +45,50 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
       // Ticket appears
       opacity.value = withTiming(1, { duration: 300 });
       scale.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.back(1.5)) });
+
+      // Hint animation: scissors glide and partial cut, then reset
+      cutProgress.value = 0;
+      scissorsX.value = 0;
+      const hintCut = 0.7;
+      const hintDistance = 220;
+
+      cutProgress.value = withSequence(
+        withTiming(hintCut, { duration: 900, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: 500, easing: Easing.in(Easing.cubic) })
+      );
+
+      scissorsX.value = withSequence(
+        withTiming(hintDistance, { duration: 900, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: 500, easing: Easing.in(Easing.cubic) })
+      );
     } else {
       // Reset values
       scale.value = 0.3;
       opacity.value = 0;
       cutProgress.value = 0;
-      ticketRotate.value = 0;
-      ticketTranslateY.value = 0;
       scissorsX.value = 0;
+      leftPieceOffsetX.value = 0;
+      leftPieceOffsetY.value = 0;
+      leftPieceRotate.value = 0;
+      rightPieceOffsetX.value = 0;
+      rightPieceOffsetY.value = 0;
+      rightPieceRotate.value = 0;
     }
   }, [visible]);
 
   const handleCutComplete = () => {
-    // Ticket pieces fly away
-    ticketRotate.value = withTiming(-20, { duration: 400 });
-    ticketTranslateY.value = withTiming(-500, { duration: 600 }, (finished) => {
+    // Ticket halves drift apart and fall with a subtle rotation
+    leftPieceOffsetX.value = withTiming(-40, { duration: 600, easing: Easing.out(Easing.cubic) });
+    leftPieceOffsetY.value = withTiming(40, { duration: 600, easing: Easing.out(Easing.quad) });
+    leftPieceRotate.value = withTiming(-6, { duration: 600, easing: Easing.out(Easing.cubic) });
+
+    rightPieceOffsetX.value = withTiming(40, { duration: 600, easing: Easing.out(Easing.cubic) });
+    rightPieceOffsetY.value = withTiming(70, { duration: 650, easing: Easing.out(Easing.quad) }, (finished) => {
       if (finished) {
         runOnJS(onAnimationComplete)();
       }
     });
+    rightPieceRotate.value = withTiming(6, { duration: 600, easing: Easing.out(Easing.cubic) });
   };
 
   const panGesture = Gesture.Pan()
@@ -91,9 +121,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
   const ticketStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [
-      { scale: scale.value },
-      { rotate: `${ticketRotate.value}deg` },
-      { translateY: ticketTranslateY.value }
+      { scale: scale.value }
     ],
   }));
 
@@ -103,15 +131,17 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
   const leftPartStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: -cutProgress.value * 20 },
-      { rotate: `${-cutProgress.value * 5}deg` }
+      { translateX: -cutProgress.value * 20 + leftPieceOffsetX.value },
+      { translateY: leftPieceOffsetY.value },
+      { rotate: `${-cutProgress.value * 5 + leftPieceRotate.value}deg` }
     ],
   }));
 
   const rightPartStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: cutProgress.value * 20 },
-      { rotate: `${cutProgress.value * 5}deg` }
+      { translateX: cutProgress.value * 20 + rightPieceOffsetX.value },
+      { translateY: rightPieceOffsetY.value },
+      { rotate: `${cutProgress.value * 5 + rightPieceRotate.value}deg` }
     ],
   }));
 
@@ -126,7 +156,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
     <Modal transparent visible={visible} animationType="none">
       <View className="flex-1 bg-black/95 items-center justify-center px-6">
         {/* Instruction Text */}
-        <Animated.View style={{ opacity: opacity.value }} className="mb-4">
+        <Animated.View style={{ opacity: 1 }} className="mb-4">
           <Text className="text-white font-primary-semibold text-lg text-center mb-2">
             ✂️ Swipe to cut your ticket
           </Text>

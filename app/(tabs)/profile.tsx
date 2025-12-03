@@ -1,13 +1,15 @@
 import { analytics, Events, Properties } from '@/lib/analytics';
+import { privacyPolicyUrl, supportEmail, websiteUrl } from '@/lib/constants';
 import { useSessionStore } from '@/lib/stores/sessionStore';
 import { useTaskStore } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, SUPABASE_KEY, SUPABASE_URL } from '@/lib/supabase';
 import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons, SimpleLineIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
+import { getPlanTypeFromRevenueCat } from '@/lib/revenuecat';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Profile() {
@@ -23,22 +25,8 @@ export default function Profile() {
   const [newName, setNewName] = useState(user?.full_name || '');
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingName, setIsSavingName] = useState(false);
-
-  // Calculate trial days left
-  const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
-
-  useEffect(() => {
-    if (user?.created_at) {
-      const signupDate = new Date(user.created_at);
-      const now = new Date();
-      const diffMs = now.getTime() - signupDate.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const trialDays = 7;
-      setDaysLeft(Math.max(0, trialDays - diffDays));
-    }
-  }, [user?.created_at]);
-
 
   // Load stats on mount
   useEffect(() => {
@@ -144,7 +132,13 @@ export default function Profile() {
         case PAYWALL_RESULT.CANCELLED:
           return false;
         case PAYWALL_RESULT.PURCHASED:
-          await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
+          {
+            const planType = await getPlanTypeFromRevenueCat();
+            await analytics.track(Events.SUBSCRIPTION_STARTED, {
+              user_id: user?.id,
+              plan_type: planType ?? 'unknown',
+            });
+          }
           return true;
         case PAYWALL_RESULT.RESTORED:
           return true;
@@ -157,6 +151,66 @@ export default function Profile() {
     } finally {
       setIsPresentingPaywall(false);
     }
+  }
+
+  async function deleteAccount(): Promise<void> {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your account? This action is irreversible and will remove all your data.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsDeletingAccount(true);
+              const session = await supabase.auth.getSession();
+              const accessToken = session.data.session?.access_token;
+
+              if (!accessToken) {
+                Alert.alert("Error", "No user session found.");
+                return;
+              }
+
+              // --- CALL SUPABASE EDGE FUNCTION ---
+              const response = await fetch(
+                `${SUPABASE_URL}/functions/v1/delete-user`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    apikey: SUPABASE_KEY,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ name: "Functions" }),
+                }
+              );
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                throw new Error(data?.error || "Failed to delete account");
+              }
+
+              // Clear local state + sign out
+              await supabase.auth.signOut();
+              clearUser();
+              setIsDeletingAccount(false);
+              router.replace("/login" as any);
+
+              Alert.alert(
+                "Account Deleted",
+                "Your account has been permanently deleted."
+              );
+            } catch (error: any) {
+              setIsDeletingAccount(false);
+              Alert.alert("Error", error.message || "Failed to delete account.");
+            }
+          },
+        },
+      ]
+    );
   }
 
 
@@ -245,15 +299,18 @@ export default function Profile() {
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  <TouchableOpacity
-                    onPress={() => setIsEditingName(true)}
-                    className="flex-row items-center"
-                  >
-                    <Text className="text-white font-primary-bold text-xl">
-                      {user?.full_name || 'Set your name'}
-                    </Text>
-                    <Ionicons name="pencil" size={16} color="#818CF8" style={{ marginLeft: 8 }} />
-                  </TouchableOpacity>
+                  <View className='flex flex-row justify-between'>
+                    <TouchableOpacity
+                      onPress={() => setIsEditingName(true)}
+                      className="flex-row items-center"
+                    >
+                      <Text className="text-white font-primary-bold text-xl">
+                        {user?.full_name || 'Set your name'}
+                      </Text>
+                      <Ionicons name="pencil" size={16} color="#818CF8" style={{ marginLeft: 8 }} />
+                    </TouchableOpacity>
+                   {user?.is_premium && <Ionicons name="planet-sharp" size={24} color="#a855f7" />}
+                  </View>
                 )}
                 <Text className="text-gray-400 font-primary-medium text-sm mt-1">
                   {user?.email || 'user@example.com'}
@@ -283,30 +340,28 @@ export default function Profile() {
           </View>
         </View>
 
-        {/* Subscription Info */}
+        {/* Premium Upsell Box */}
         {!user?.is_premium && (
           <View className="bg-black px-6 py-5 mx-6 mb-6 rounded-2xl border-2 border-secondary/50">
-            {/* Icon or Badge */}
+
+            {/* Badge */}
             <View className="flex-row items-center justify-center mb-2">
               <View className="bg-primary/20 px-3 py-1 rounded-full">
                 <Text className="text-primary text-xs font-primary-bold uppercase tracking-wider">
-                  {daysLeft && daysLeft > 0 ? 'Free Trial' : 'Trial Ending'}
+                  Upgrade to Premium
                 </Text>
               </View>
             </View>
 
-            {/* Days Left Display */}
+            {/* Title */}
             <Text className="text-white text-center font-primary-bold text-2xl mb-1">
-              {daysLeft && daysLeft > 0 ? (
-                `${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining`
-              ) : (
-                'Last day of trial!'
-              )}
+              Unlock Your Full Potential
             </Text>
 
             {/* Subtext */}
-            <Text className="text-gray-400 text-center text-sm mb-4 font-primary">
-              Continue your journey after the trial ends
+            <Text className="text-gray-400 text-center text-sm mb-4 font-primary leading-relaxed">
+              Access 3D space travel, unlimited recurring tasks, detailed weekly stats,
+              and premium sounds.
             </Text>
 
             {/* CTA Button */}
@@ -315,29 +370,24 @@ export default function Profile() {
               className="bg-white py-3.5 rounded-xl items-center shadow-lg"
             >
               <Text className="text-black font-primary-bold text-base">
-                Subscribe to Continue
+                Upgrade to Premium
               </Text>
             </TouchableOpacity>
 
-            {/* Optional: Urgency message for last few days */}
-            {daysLeft && daysLeft <= 2 && (
-              <View className="mt-4 pt-4 border-t border-purple-500/20">
-                <Text className="text-gray-400 text-xs text-center">
-                  Subscribe now to keep your progress and continue using FocusRoom
-                </Text>
-              </View>
-            )}
           </View>
         )}
 
 
 
+
         {/* Focus Stats */}
-        {stats && stats.totalSessions > 0 && (
+        {stats && stats.totalSessions > 0 ? (
           <View className="px-6 pb-6">
             <Text className="text-lg font-primary-bold text-white mb-4">Focus Statistics</Text>
+
             <View className="bg-card rounded-2xl p-4 gap-y-5">
 
+              {/* FREE — Total Sessions */}
               <View className="flex-row items-center justify-between">
                 <View className="flex-row items-center gap-x-2">
                   <SimpleLineIcons name="rocket" size={24} color="white" />
@@ -346,6 +396,7 @@ export default function Profile() {
                 <Text className="text-white font-primary-bold text-lg">{stats.totalSessions}</Text>
               </View>
 
+              {/* FREE — Total Focus Time */}
               <View className="flex-row items-center justify-between">
                 <View className="flex-row items-center gap-x-2">
                   <MaterialCommunityIcons name="timer-outline" size={24} color="white" />
@@ -354,68 +405,126 @@ export default function Profile() {
                 <Text className="text-white font-primary-bold text-lg">{stats.totalMinutes}min</Text>
               </View>
 
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-x-2">
-                  <Ionicons name="stats-chart-outline" size={24} color="white" />
-                  <Text className="text-gray-400 font-primary-medium">Average Session</Text>
-                </View>
-                <Text className="text-white font-primary-bold text-lg">{stats.averageSessionLength}min</Text>
-              </View>
-
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-x-2">
-                  <Ionicons name="fitness" size={24} color="white" />
-                  <Text className="text-gray-400 font-primary-medium">Focus Health</Text>
-                </View>
-                <View className="flex-row items-center">
-                  <Text className="text-white font-primary-bold text-lg mr-2">
-                    {stats.focusHealthScore}
-                  </Text>
-                  <View className={`px-2 py-1 rounded-full ${stats.focusHealthScore >= 80 ? 'bg-green-500/20' :
-                    stats.focusHealthScore >= 60 ? 'bg-yellow-500/20' :
-                      stats.focusHealthScore >= 40 ? 'bg-orange-500/20' : 'bg-red-500/20'
-                    }`}>
-                    <Text className={`text-xs font-primary-bold ${stats.focusHealthScore >= 80 ? 'text-green-500' :
-                      stats.focusHealthScore >= 60 ? 'text-yellow-500' :
-                        stats.focusHealthScore >= 40 ? 'text-orange-500' : 'text-red-500'
-                      }`}>
-                      {stats.focusHealthScore >= 80 ? 'Excellent' :
-                        stats.focusHealthScore >= 60 ? 'Good' :
-                          stats.focusHealthScore >= 40 ? 'Fair' : 'Needs Work'}
+              {/* PREMIUM — Average Session */}
+              <TouchableOpacity
+                onPress={() => !user.is_premium && presentPaywall()}
+                className={user.is_premium ? 'opacity-100' : 'opacity-50'}
+              >
+                <View className="flex-row items-center justify-between opacity-100">
+                  <View className="flex-row items-center gap-x-2">
+                    <Ionicons name="stats-chart-outline" size={24} color="white" />
+                    <Text className="text-gray-400 font-primary-medium">
+                      Average Session
                     </Text>
                   </View>
-                </View>
-              </View>
 
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-x-2">
-                  <Ionicons name="planet-outline" size={24} color="white" />
-                  <Text className="text-gray-400 font-primary-medium">Distance Traveled</Text>
+                  {user.is_premium ? (
+                    <Text className="text-white font-primary-bold text-lg">
+                      {stats.averageSessionLength}min
+                    </Text>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">•••</Text>
+                      <Ionicons name="lock-closed-outline" size={20} color="#888" />
+                    </View>
+                  )}
                 </View>
-                <Text className="text-white font-primary-bold text-lg">
-                  {stats.totalDistanceKm >= 1000000
-                    ? `${(stats.totalDistanceKm / 1000000).toFixed(1)}M km`
-                    : stats.totalDistanceKm >= 1000
-                      ? `${Math.round(stats.totalDistanceKm / 1000)}K km`
-                      : `${stats.totalDistanceKm} km`}
-                </Text>
-              </View>
+              </TouchableOpacity>
+
+              {/* PREMIUM — Focus Health */}
+              <TouchableOpacity
+                onPress={() => !user.is_premium && presentPaywall()}
+                className={user.is_premium ? 'opacity-100' : 'opacity-50'}
+              >
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-x-2">
+                    <Ionicons name="fitness" size={24} color="white" />
+                    <Text className="text-gray-400 font-primary-medium">
+                      Focus Health
+                    </Text>
+                  </View>
+
+                  {user.is_premium ? (
+                    <View className="flex-row items-center">
+                      <Text className="text-white font-primary-bold text-lg mr-2">
+                        {stats.focusHealthScore}
+                      </Text>
+                      <View className={`px-2 py-1 rounded-full ${stats.focusHealthScore >= 80 ? 'bg-green-500/20' :
+                        stats.focusHealthScore >= 60 ? 'bg-yellow-500/20' :
+                          stats.focusHealthScore >= 40 ? 'bg-orange-500/20' : 'bg-red-500/20'
+                        }`}>
+                        <Text className={`text-xs font-primary-bold ${stats.focusHealthScore >= 80 ? 'text-green-500' :
+                          stats.focusHealthScore >= 60 ? 'text-yellow-500' :
+                            stats.focusHealthScore >= 40 ? 'text-orange-500' : 'text-red-500'
+                          }`}>
+                          {stats.focusHealthScore >= 80 ? 'Excellent' :
+                            stats.focusHealthScore >= 60 ? 'Good' :
+                              stats.focusHealthScore >= 40 ? 'Fair' : 'Needs Work'}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">•••</Text>
+                      <Ionicons name="lock-closed-outline" size={20} color="#888" />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {/* PREMIUM — Distance Traveled */}
+              <TouchableOpacity
+                onPress={() => !user.is_premium && presentPaywall()}
+                className={user.is_premium ? 'opacity-100' : 'opacity-50'}
+              >
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-x-2">
+                    <Ionicons name="planet-outline" size={24} color="white" />
+                    <Text className="text-gray-400 font-primary-medium">
+                      Distance Traveled
+                    </Text>
+                  </View>
+
+                  {user.is_premium ? (
+                    <Text className="text-white font-primary-bold text-lg">
+                      {stats.totalDistanceKm >= 1000000
+                        ? `${(stats.totalDistanceKm / 1000000).toFixed(1)}M km`
+                        : stats.totalDistanceKm >= 1000
+                          ? `${Math.round(stats.totalDistanceKm / 1000)}K km`
+                          : `${stats.totalDistanceKm} km`}
+                    </Text>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">•••</Text>
+                      <Ionicons name="lock-closed-outline" size={20} color="#888" />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+            </View>
+          </View>
+        ) : (
+          <View className="px-6 pb-6">
+            <Text className="text-lg font-primary-bold text-white mb-4">Focus Statistics</Text>
+            <View className="bg-card rounded-2xl p-12 gap-y-5">
+              <Text className="text-gray-200 text-lg text-center font-primary-medium">
+                No stats available yet
+              </Text>
             </View>
           </View>
         )}
 
 
+
         {/* Menu Items */}
         <View className="px-6 pb-4">
-          <Text className="text-lg font-primary-bold text-white mb-4">More</Text>
-
-
-
+          <Text className="text-lg font-primary-bold text-white mb-4">Info</Text>
           <MenuItem
             icon={<Ionicons name="document-text-outline" size={24} color="white" />}
             title="Privacy Policy"
             onPress={() => {
-              Linking.openURL('https://focusroomapp.vercel.app/privacy-policy').catch(() => {
+              Linking.openURL(privacyPolicyUrl).catch(() => {
                 Alert.alert('Error', 'Failed to open Privacy Policy');
               });
             }}
@@ -432,7 +541,7 @@ export default function Profile() {
                   { text: 'Cancel', style: 'cancel' },
                   {
                     text: 'Send Email',
-                    onPress: () => Linking.openURL('mailto:riadjoul@gmail.com')
+                    onPress: () => Linking.openURL(`mailto:${supportEmail}`)
                   }
                 ]
               );
@@ -443,15 +552,30 @@ export default function Profile() {
             icon={<Ionicons name="information-circle-outline" size={24} color="white" />}
             title="About FocusRoom"
             onPress={() => {
-              Alert.alert(
-                'About FocusRoom',
-                'FocusRoom\n\nTransform your focus sessions into space journeys. Choose your tasks, pick a destination planet, and focus while traveling through the cosmos.\n\nMade with ❤️ for productivity enthusiasts',
-                [{ text: 'OK' }]
-              );
+              Linking.openURL(websiteUrl).catch(() => {
+                Alert.alert('Error', 'Failed to open Privacy Policy');
+              });
             }}
           />
         </View>
-
+        {/* Menu Items */}
+        <View className="px-6 pb-4">
+          <Text className="text-lg font-primary-bold text-red-300 mb-4">Danger zone</Text>
+          {
+            isDeletingAccount ? (
+              <View className="bg-card rounded-2xl p-4 mb-3 items-center">
+                <ActivityIndicator size="small" color="red" />
+                <Text className="text-red-500 font-primary-medium mt-2">Deleting account...</Text>
+              </View>
+            ) : <MenuItem
+              icon={<Ionicons name="trash-bin-outline" size={24} color="red" />}
+              title="Delete Account"
+              danger
+              onPress={deleteAccount}
+              disabled={isDeletingAccount}
+            />
+          }
+        </View>
 
         {/* Sign Out Button */}
         <View className="px-6 pt-2">

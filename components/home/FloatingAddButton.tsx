@@ -1,8 +1,12 @@
+import { analytics, Events } from '@/lib/analytics';
+import { useUserStore } from '@/lib/stores/userStore';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+  
 
 interface FloatingAddButtonProps {
   onPress: () => void;
@@ -11,7 +15,9 @@ interface FloatingAddButtonProps {
 
 export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonProps) {
   const [expanded, setExpanded] = useState(false);
-  
+  const user = useUserStore((state) => state.user);
+  const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
+
   const handleMainPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (onLongPress) {
@@ -20,109 +26,151 @@ export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonPro
       onPress();
     }
   };
-  
+
   const handleQuickAdd = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(false);
     onPress();
   };
-  
+
   const handleRecurring = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setExpanded(false);
-    onLongPress?.();
-  };
+    if (user?.is_premium) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setExpanded(false);
+      onLongPress?.();
+    } else {
+      presentPaywall();
+      return;
+    }
+  }
+
+  async function presentPaywall(): Promise<boolean> {
+      // Prevent re-entrancy
+      if (isPresentingPaywall) return false;
+      setIsPresentingPaywall(true);
   
-  return (
-    <View className="absolute bottom-8 right-6">
-      <View className="items-end">
-        {/* Expanded Options - Stack upward */}
-        {expanded && (
-          <View className="mb-3 gap-3">
-            {/* Recurring Task Button */}
-            <Animated.View 
-              entering={FadeIn.duration(200)}
-              exiting={FadeOut.duration(150)}
-            >
-              <TouchableOpacity 
-                className="bg-card rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
-                activeOpacity={0.8}
-                onPress={handleRecurring}
-                style={{
-                  minWidth: 200,
-                  shadowColor: '#3B82F6',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                  elevation: 8,
-                }}
+      try {
+        // Track paywall opened
+        const openTime = Date.now();
+        await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
+  
+        const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
+  
+        // Track paywall closed
+        const closeTime = Date.now();
+        const durationSeconds = Math.round((closeTime - openTime) / 1000);
+        await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
+  
+        switch (paywallResult) {
+          case PAYWALL_RESULT.NOT_PRESENTED:
+          case PAYWALL_RESULT.ERROR:
+          case PAYWALL_RESULT.CANCELLED:
+            return false;
+          case PAYWALL_RESULT.PURCHASED:
+            await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
+            return true;
+          case PAYWALL_RESULT.RESTORED:
+            return true;
+          default:
+            return false;
+        }
+      } catch (error) {
+        console.error('Paywall error:', error);
+        return false;
+      } finally {
+        setIsPresentingPaywall(false);
+      }
+    }
+
+    return (
+      <View className="absolute bottom-8 right-6">
+        <View className="items-end">
+          {/* Expanded Options - Stack upward */}
+          {expanded && (
+            <View className="mb-3 gap-3">
+              {/* Recurring Task Button */}
+              <Animated.View
+                entering={FadeIn.duration(200)}
+                exiting={FadeOut.duration(150)}
               >
-                <View className="w-10 h-10 bg-white/20 rounded-full items-center justify-center mr-3">
-                  <MaterialCommunityIcons name="repeat" size={22} color="white" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white font-primary-bold text-base">Recurring Task</Text>
-                  <Text className="text-blue-100 font-primary-regular text-xs mt-0.5">
-                    Repeat daily, weekly...
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-            
-            {/* Quick Add Button */}
-            <Animated.View 
-              entering={FadeIn.duration(200).delay(50)}
-              exiting={FadeOut.duration(150)}
-            >
-              <TouchableOpacity 
-                className="bg-card rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
-                activeOpacity={0.8}
-                onPress={handleQuickAdd}
-                style={{
-                  minWidth: 200,
-                  shadowColor: '#3B82F6',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                  elevation: 8,
-                }}
+                <TouchableOpacity
+                  className={`bg-card rounded-2xl px-5 py-4 flex-row items-center border-2 ${user?.is_premium ? 'border-gray-500' : 'border-secondary'}`}
+                  activeOpacity={0.8}
+                  onPress={handleRecurring}
+                  style={{
+                    minWidth: 200,
+                    shadowColor: '#a855f7',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 8,
+                  }}
+                >
+                  <View className="w-10 h-10 bg-white/20 rounded-full items-center justify-center mr-3">
+                    <MaterialCommunityIcons name="repeat" size={22} color="white" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-white font-primary-bold text-base">Recurring Task</Text>
+                    <Text className="text-blue-100 font-primary-regular text-xs mt-0.5">
+                      Repeat daily, weekly...
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Quick Add Button */}
+              <Animated.View
+                entering={FadeIn.duration(200).delay(50)}
+                exiting={FadeOut.duration(150)}
               >
-                <View className="w-10 h-10 bg-primary/20 rounded-full items-center justify-center mr-3">
-                  <FontAwesome5 name="plus" size={18} color="#E4F964" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white font-primary-bold text-base">Quick Add</Text>
-                  <Text className="text-gray-400 font-primary-regular text-xs mt-0.5">
-                    One-time task
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        )}
-        
-        {/* Main Add Button */}
-        <TouchableOpacity 
-          className={`w-16 h-16 rounded-full items-center justify-center ${
-            expanded ? 'bg-gray-800' : 'bg-primary'
-          }`}
-          activeOpacity={0.8}
-          onPress={handleMainPress}
-          style={{
-            shadowColor: expanded ? '#000' : '#E4F964',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 8,
-          }}
-        >
-          <FontAwesome5 
-            name={expanded ? 'times' : 'plus'} 
-            size={24} 
-            color={expanded ? 'white' : 'black'} 
-          />
-        </TouchableOpacity>
+                <TouchableOpacity
+                  className="bg-card rounded-2xl px-5 py-4 flex-row items-center border-2 border-gray-700"
+                  activeOpacity={0.8}
+                  onPress={handleQuickAdd}
+                  style={{
+                    minWidth: 200,
+                    shadowColor: '#3B82F6',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 8,
+                  }}
+                >
+                  <View className="w-10 h-10 bg-primary/20 rounded-full items-center justify-center mr-3">
+                    <FontAwesome5 name="plus" size={18} color="white" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-white font-primary-bold text-base">Quick Add</Text>
+                    <Text className="text-gray-400 font-primary-regular text-xs mt-0.5">
+                      One-time task
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          )}
+
+          {/* Main Add Button */}
+          <TouchableOpacity
+            className={`w-16 h-16 rounded-full items-center justify-center ${expanded ? 'bg-gray-800' : 'bg-primary'
+              }`}
+            activeOpacity={0.8}
+            onPress={handleMainPress}
+            style={{
+              shadowColor: expanded ? '#000' : '#E4F964',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 8,
+            }}
+          >
+            <FontAwesome5
+              name={expanded ? 'times' : 'plus'}
+              size={24}
+              color={expanded ? 'white' : 'black'}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
-  );
-}
+    );
+  }

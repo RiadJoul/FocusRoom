@@ -18,6 +18,7 @@ import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
 import { analytics, Events } from '../lib/analytics';
+import { getPlanTypeFromRevenueCat } from '../lib/revenuecat';
 
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
@@ -31,7 +32,7 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const user = useUserStore((state) => state.user);
   const router = useRouter();
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontsError] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
     Poppins_600SemiBold,
@@ -147,7 +148,13 @@ export default function RootLayout() {
           presentPaywall();
           return false;
         case PAYWALL_RESULT.PURCHASED:
-          await analytics.track(Events.SUBSCRIPTION_STARTED, { user_id: user?.id, plan_type: 'monthly_premium' });
+          {
+            const planType = await getPlanTypeFromRevenueCat();
+            await analytics.track(Events.SUBSCRIPTION_STARTED, {
+              user_id: user?.id,
+              plan_type: planType ?? 'unknown',
+            });
+          }
           return true;
         case PAYWALL_RESULT.RESTORED:
           return true;
@@ -330,10 +337,14 @@ export default function RootLayout() {
 
   // when fonts are loaded and auth check finished, hide the native splash
   useEffect(() => {
-    if (fontsLoaded && !checking) {
+    if (fontsError) {
+      console.error('Font load error:', fontsError);
+    }
+
+    if ((fontsLoaded || fontsError) && !checking) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, checking]);
+  }, [fontsLoaded, fontsError, checking]);
 
   useEffect(() => {
     if (trialExpired && user?.is_premium === false) {
@@ -348,7 +359,7 @@ export default function RootLayout() {
     });
   };
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded && !fontsError) {
     return null;
   }
 
