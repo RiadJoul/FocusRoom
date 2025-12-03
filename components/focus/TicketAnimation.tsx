@@ -14,6 +14,7 @@ import Animated, {
 import { PlanetTrip } from './PlanetTrips';
 import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useListStore } from '@/lib/stores/listStore';
+import { useUserStore } from '@/lib/stores/userStore';
 
 interface TicketAnimationProps {
   visible: boolean;
@@ -33,12 +34,16 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
   const rightPieceOffsetX = useSharedValue(0);
   const rightPieceOffsetY = useSharedValue(0);
   const rightPieceRotate = useSharedValue(0);
+  const cutLineOpacity = useSharedValue(1);
+  const perforationOpacity = useSharedValue(1);
 
   //list of the task
   const lists = useListStore((state) => state.lists);
   const getTaskList = (taskListId: string) => {
     return lists.find((list) => list.id === taskListId);
   }
+
+  const user = useUserStore((state) => state.user);
 
   useEffect(() => {
     if (visible) {
@@ -48,6 +53,8 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
       // Hint animation: scissors glide and partial cut, then reset
       cutProgress.value = 0;
+      cutLineOpacity.value = 1;
+      perforationOpacity.value = 1;
       scissorsX.value = 0;
       const hintCut = 0.7;
       const hintDistance = 220;
@@ -73,11 +80,15 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
       rightPieceOffsetX.value = 0;
       rightPieceOffsetY.value = 0;
       rightPieceRotate.value = 0;
+      cutLineOpacity.value = 1;
+      perforationOpacity.value = 1;
     }
   }, [visible]);
 
   const handleCutComplete = () => {
     // Ticket halves drift apart and fall with a subtle rotation
+    cutLineOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
+    perforationOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
     leftPieceOffsetX.value = withTiming(-40, { duration: 600, easing: Easing.out(Easing.cubic) });
     leftPieceOffsetY.value = withTiming(40, { duration: 600, easing: Easing.out(Easing.quad) });
     leftPieceRotate.value = withTiming(-6, { duration: 600, easing: Easing.out(Easing.cubic) });
@@ -102,11 +113,18 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
       }
     })
     .onEnd(() => {
-      if (cutProgress.value > 0.8) {
+      // Require almost full swipe to truly "tear" the ticket
+      if (cutProgress.value > 0.95) {
         // Cut completed!
         runOnJS(Haptics.notificationAsync)(Haptics.NotificationFeedbackType.Success);
-        cutProgress.value = withTiming(1, { duration: 200 });
-        scissorsX.value = withTiming(300, { duration: 200 }, (finished) => {
+
+        // Keep the cut line where the user stopped, just
+        // give the scissors a small forward motion to "finish" the cut
+        const targetX = Math.min(scissorsX.value + 40, 300);
+        scissorsX.value = withTiming(targetX, {
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+        }, (finished) => {
           if (finished) {
             runOnJS(handleCutComplete)();
           }
@@ -127,21 +145,48 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
   const cutLineStyle = useAnimatedStyle(() => ({
     width: `${cutProgress.value * 100}%`,
+    opacity: cutLineOpacity.value,
+  }));
+
+  const perforationStyle = useAnimatedStyle(() => ({
+    opacity: perforationOpacity.value,
   }));
 
   const leftPartStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: -cutProgress.value * 20 + leftPieceOffsetX.value },
+      {
+        translateX:
+          -cutProgress.value * 4 - // tiny bend for most of the swipe
+          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 36 + // real tear near the end
+          leftPieceOffsetX.value,
+      },
       { translateY: leftPieceOffsetY.value },
-      { rotate: `${-cutProgress.value * 5 + leftPieceRotate.value}deg` }
+      {
+        rotate: `${
+          -cutProgress.value * 1.5 - // gentle tilt
+          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 4 + // stronger tilt near full tear
+          leftPieceRotate.value
+        }deg`,
+      },
     ],
   }));
 
   const rightPartStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: cutProgress.value * 20 + rightPieceOffsetX.value },
+      {
+        translateX:
+          cutProgress.value * 4 + // tiny bend for most of the swipe
+          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 36 + // real tear near the end
+          rightPieceOffsetX.value,
+      },
       { translateY: rightPieceOffsetY.value },
-      { rotate: `${cutProgress.value * 5 + rightPieceRotate.value}deg` }
+      {
+        rotate: `${
+          cutProgress.value * 1.5 + // gentle tilt
+          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 4 + // stronger tilt near full tear
+          rightPieceRotate.value
+        }deg`,
+      },
     ],
   }));
 
@@ -151,6 +196,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
   }));
 
   if (!visible) return null;
+
 
   return (
     <Modal transparent visible={visible} animationType="none">
@@ -186,13 +232,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
             {/* Top Part - Main Ticket Info */}
             <Animated.View style={leftPartStyle}>
               {/* Header Gradient Bar */}
-              <View style={{ 
-                backgroundColor: '#000000', 
-                paddingHorizontal: 24, 
-                paddingVertical: 16,
-                borderTopLeftRadius: 20,
-                borderTopRightRadius: 20,
-              }}>
+              <View className={`${user?.is_premium ? 'bg-purple-800' : 'bg-black'} rounded-t-2xl px-6 py-4`}>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center">
                     <View>
@@ -200,9 +240,27 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                       <Text className="text-white font-primary-bold text-lg">BOARDING PASS</Text>
                     </View>
                   </View>
+                  {/* make this view glowing */}
+                  {user?.is_premium && (
+                    <View style={{
+                      backgroundColor: '#A78BFA',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 6,
+                      shadowColor: '#A78BFA',
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.7, 
+                      shadowRadius: 10,
+                      elevation: 10,
+                    }}>
+                      <Text className="text-white font-primary-bold text-sm tracking-wider">FIRST CLASS</Text>
+                    </View>
+                  )}
+                  {!user?.is_premium && (
                   <View className="bg-white/20 px-3 py-1.5 rounded-lg">
-                    <Text className="text-white font-primary-bold text-xs tracking-wider">ECONOMY</Text>
+                    <Text className="text-white font-primary-bold text-sm tracking-wider">ECONOMY</Text>
                   </View>
+                  )}
                 </View>
               </View>
 
@@ -247,16 +305,18 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
             {/* Perforated Cut Line */}
             <View className="relative" style={{ height: 1 }}>
-              <View style={{ 
-                flexDirection: 'row', 
-                justifyContent: 'space-evenly',
-                backgroundColor: 'transparent',
-                paddingVertical: 0,
-              }}>
+              <Animated.View
+                style={[{
+                  flexDirection: 'row',
+                  justifyContent: 'space-evenly',
+                  backgroundColor: 'transparent',
+                  paddingVertical: 0,
+                }, perforationStyle]}
+              >
                 {[...Array(25)].map((_, i) => (
                   <View key={i} style={{ width: 8, height: 1, backgroundColor: '#D1D5DB' }} />
                 ))}
-              </View>
+              </Animated.View>
               <Animated.View
                 style={[cutLineStyle, { 
                   backgroundColor: '#000000', 

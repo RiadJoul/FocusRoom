@@ -259,8 +259,8 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
               {/* Due Date */}
               {task.due_date && (
                 <View className="flex-row items-center">
-                  <Text className="text-xs font-primary-medium text-gray-500">
-                    🕒 {formatDueDate(new Date(task.due_date))}
+                  <Text className="flex items-center text-xs font-primary-medium text-gray-500">
+                    <Ionicons name='time-outline'/> {formatDueDate(new Date(task.due_date))}
                   </Text>
                 </View>
               )}
@@ -291,7 +291,8 @@ export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask }: TaskL
     const list = lists.find(l => l.id === listId);
     return {
       title: list?.title || 'Unknown List',
-      icon: list?.icon || 'list-outline'
+      icon: list?.icon || 'list-outline',
+      color: list?.color || '#9CA3AF',
     };
   };
 
@@ -303,8 +304,8 @@ export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask }: TaskL
           <View key={listId} className={groupIndex > 0 ? 'mt-6' : ''}>
             {/* List Header */}
             <View className="mb-3 flex-row items-center gap-2">
-              <Ionicons name={listInfo.icon as any} size={16} color="#9CA3AF" />
-              <Text className="text-gray-400 font-primary-semibold text-sm uppercase tracking-wider">
+              <Ionicons name={listInfo.icon as any} size={16} color={listInfo.color} />
+              <Text style={{ color: listInfo.color }} className={`font-primary-semibold text-sm uppercase tracking-wider`}>
                 {listInfo.title} ({listTasks.length})
               </Text>
             </View>

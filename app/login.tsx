@@ -3,14 +3,19 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { analytics, Events, Properties } from '../lib/analytics';
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
+import { Platform } from 'react-native';
+import AntDesign from '@expo/vector-icons/AntDesign';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { privacyPolicyUrl, termsOfServiceUrl } from '@/lib/constants';
 
 export default function Login() {
-  const [loading, setLoading] = useState(false);
+  const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
+  const [appleAuthLoading, setAppleAuthLoading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -24,9 +29,9 @@ export default function Login() {
   useEffect(() => {
     // Listen for auth changes
     const { data: listener } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
-      
+
       if (session?.user) {
-        
+
         // For now, just use the auth user directly until RLS policies are configured
         // The auth user already has email, user_metadata with name and picture
         const user = {
@@ -35,9 +40,9 @@ export default function Login() {
           full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
           avatar_url: session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture,
         };
-        
+
         useUserStore.getState().setUser(user);
-        
+
         // Try to fetch from users table in background (non-blocking)
         supabase
           .from('users')
@@ -51,7 +56,7 @@ export default function Login() {
               useUserStore.getState().setUser(userProfile);
             }
           });
-        
+
         // Navigate to tabs after setting user (always navigate)
         router.replace('/(tabs)' as any);
       } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
@@ -67,18 +72,18 @@ export default function Login() {
 
   const signInWithGoogle = async () => {
     try {
-      setLoading(true);
+      setGoogleAuthLoading(true);
 
       // For native builds (expo run:ios/android), use custom scheme instead of Expo proxy
       // The scheme 'focusroom' is defined in app.json
-      const redirectUri = (AuthSession as any).makeRedirectUri({ 
+      const redirectUri = (AuthSession as any).makeRedirectUri({
         scheme: 'focusroom',
         path: 'auth/callback'
       });
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { 
+        options: {
           redirectTo: redirectUri,
           skipBrowserRedirect: true // Return URL instead of auto-redirecting
         },
@@ -87,7 +92,7 @@ export default function Login() {
       if (error) {
         console.error('Sign in error:', error);
         Alert.alert('Sign in error', error.message);
-        setLoading(false);
+        setGoogleAuthLoading(false);
         return;
       }
 
@@ -95,25 +100,25 @@ export default function Login() {
       if (url) {
         try {
           const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
-          
+
           // Handle the result - extract tokens and set session
           if (result.type === 'success' && result.url) {
-            
+
             // Extract tokens from the callback URL
             const callbackUrl = result.url;
             const hashPart = callbackUrl.split('#')[1];
-            
+
             if (hashPart) {
               const params = new URLSearchParams(hashPart);
               const accessToken = params.get('access_token');
               const refreshToken = params.get('refresh_token');
-              
+
               if (accessToken) {
                 const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
                   access_token: accessToken,
                   refresh_token: refreshToken || '',
                 });
-                
+
                 if (sessionError) {
                   console.error('Error setting session:', sessionError);
                   Alert.alert('Sign in failed', sessionError.message);
@@ -124,14 +129,14 @@ export default function Login() {
                     [Properties.USER_ID]: sessionData.session.user.id,
                     [Properties.EMAIL]: sessionData.session.user.email,
                   });
-                  
+
                   // Identify user
                   analytics.identify(sessionData.session.user.id, {
                     [Properties.EMAIL]: sessionData.session.user.email,
                     [Properties.NAME]: sessionData.session.user.user_metadata?.full_name,
                     [Properties.SIGNUP_DATE]: sessionData.session.user.created_at,
                   });
-                  
+
                   // The onAuthStateChange listener above will handle navigation
                 }
               }
@@ -141,16 +146,75 @@ export default function Login() {
           console.log('WebBrowser.openAuthSessionAsync failed:', err);
           Alert.alert('Authentication failed', 'Could not complete sign in');
         } finally {
-          setLoading(false);
+          setGoogleAuthLoading(false);
         }
       } else {
         console.log('No OAuth URL returned from supabase.auth.signInWithOAuth()', data);
-        setLoading(false);
+        setGoogleAuthLoading(false);
       }
 
     } catch (error: any) {
       Alert.alert('An unexpected error occurred', error.message);
-      setLoading(false);
+      setGoogleAuthLoading(false);
+    }
+  };
+
+  const signInWithApple = async () => {
+    if (Platform.OS !== 'ios') {
+      return;
+    }
+
+    try {
+      setAppleAuthLoading(true);
+
+      const appleCredential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!appleCredential.identityToken) {
+        throw new Error('Apple Sign In failed – no identity token returned.');
+      }
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: appleCredential.identityToken,
+      });
+
+      if (error) {
+        console.error('Apple sign in error:', error);
+        Alert.alert('Sign in error', error.message);
+        return;
+      }
+
+      if (data?.session) {
+        const user = data.session.user;
+
+        analytics.track(Events.SIGN_IN, {
+          method: 'apple',
+          [Properties.USER_ID]: user.id,
+          [Properties.EMAIL]: user.email,
+        });
+
+        analytics.identify(user.id, {
+          [Properties.EMAIL]: user.email,
+          [Properties.NAME]:
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name,
+          [Properties.SIGNUP_DATE]: user.created_at,
+        });
+        // The onAuthStateChange listener will handle navigation
+      }
+    } catch (err: any) {
+      // User cancelled the Apple sign-in dialog
+      if (err?.code === 'ERR_CANCELED') {
+        return;
+      }
+
+    } finally {
+      setAppleAuthLoading(false);
     }
   };
 
@@ -178,25 +242,22 @@ export default function Login() {
             Transform your focus sessions into interstellar adventures
           </Text>
 
-          {/* Google Sign In Button */}
+
           <View className="w-full">
+            {/* Google Sign In Button */}
             <TouchableOpacity
               onPress={signInWithGoogle}
               className="bg-white py-5 rounded-2xl flex-row items-center justify-center shadow-lg"
               activeOpacity={0.9}
-              disabled={loading}
+              disabled={googleAuthLoading}
             >
-              {loading ? (
+              {googleAuthLoading ? (
                 <ActivityIndicator size="small" color="#000" />
               ) : (
                 <>
                   {/* Google Icon */}
                   <View className="mr-3">
-                    <Image
-                      source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
-                      style={{ width: 24, height: 24 }}
-                      contentFit="contain"
-                    />
+                    <AntDesign name="google" size={24} color="#000000" />
                   </View>
                   <Text className="text-gray-800 font-primary-bold text-lg">
                     Continue with Google
@@ -204,12 +265,54 @@ export default function Login() {
                 </>
               )}
             </TouchableOpacity>
+            {/* Apple Sign In Button */}
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                onPress={signInWithApple}
+                className="bg-black border border-gray-700 py-5 rounded-2xl flex-row items-center justify-center shadow-lg mt-4"
+                activeOpacity={0.9}
+                disabled={appleAuthLoading}
+              >
+                {appleAuthLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    {/* Apple Icon */}
+                    <View className="mr-3">
+                      <AntDesign name="apple" size={24} color="#fff" />
+                    </View>
+                    <Text className="text-white font-primary-bold text-lg">
+                      Continue with Apple
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Footer Text */}
-          <Text className="text-gray-400 text-center text-sm mt-8 px-8">
-            Secure authentication powered by Google OAuth
-          </Text>
+          <View className="flex-row flex-wrap justify-center mt-8 px-8">
+            <Text className="text-gray-300 text-sm">By signing in, you agree to our </Text>
+
+            <Text
+              className="text-secondary/90 underline text-sm"
+              onPress={() => Linking.openURL(termsOfServiceUrl)}
+            >
+              Terms of Service
+            </Text>
+
+            <Text className="text-gray-300 text-sm"> and </Text>
+
+            <Text
+              className="text-secondary/90 underline text-sm"
+              onPress={() => Linking.openURL(privacyPolicyUrl)}
+            >
+              Privacy Policy
+            </Text>
+
+            <Text className="text-gray-300 text-sm">.</Text>
+          </View>
+
         </View>
       </View>
     </SafeAreaView>

@@ -1,0 +1,4 @@
+export const websiteUrl = 'https://focusroomapp.vercel.app';
+export const termsOfServiceUrl = `${websiteUrl}/terms-and-conditions`;
+export const privacyPolicyUrl = `${websiteUrl}/privacy-policy`;
+export const supportEmail = "riadjoul@gmail.com"

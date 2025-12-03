@@ -33,15 +33,15 @@ export default function HomeScreen() {
   const removeList = useListStore((state) => state.removeList);
   const loading = useTaskStore((state) => state.loading);
 
+  const isPremium = Boolean(user?.is_premium);
+  const canCreateMoreLists = isPremium || lists.length < 5;
+
   // Bottom Sheet
   const bottomSheetRef = useRef<BottomSheet>(null);
-
+  const recurringBottomSheetRef = useRef<BottomSheet>(null);
 
   // Intro Modal
   const [showIntroModal, setShowIntroModal] = useState(false);
-
-  // Recurring Task Modal
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
 
 
 
@@ -56,6 +56,9 @@ export default function HomeScreen() {
 
   const handleOpenBottomSheet = useCallback(() => {
     bottomSheetRef.current?.expand();
+  }, []);
+  const handleOpenRecurringSheet = useCallback(() => {
+    recurringBottomSheetRef.current?.expand();
   }, []);
 
   // Check if user has seen intro modal
@@ -114,10 +117,21 @@ export default function HomeScreen() {
     await addTask(listId, title, priority, dueDate);
   }, [addTask]);
 
-  // Handler for creating a list
-  const handleCreateList = useCallback(async (title: string, icon: string) => {
-    return await addList(title, icon);
-  }, [addList]);
+  // Handler for creating a list (enforce free vs premium limits)
+  const handleCreateList = useCallback(
+    async (title: string, icon: string, color?: string) => {
+      if (!canCreateMoreLists) {
+        Alert.alert(
+          'Lists limit reached',
+          'Free plan allows up to 5 lists. Upgrade to Premium to create unlimited lists.'
+        );
+        return null;
+      }
+
+      return await addList(title, icon, color);
+    },
+    [addList, canCreateMoreLists]
+  );
 
   // Handler for deleting a list
   const handleDeleteList = useCallback(async (listId: string, listTitle: string) => {
@@ -224,34 +238,36 @@ export default function HomeScreen() {
           <View className="h-24" />
         </ScrollView>
 
-        {/* Floating Add Button */}
-        <FloatingAddButton
-          onPress={handleOpenBottomSheet}
-          onLongPress={() => setShowRecurringModal(true)}
-        />
-
-        {/* Bottom Sheet for Adding Task */}
-        <AddTaskBottomSheet
-          bottomSheetRef={bottomSheetRef}
-          lists={lists}
-          onAddTask={handleAddTask}
-          onCreateList={handleCreateList}
-          onDeleteList={handleDeleteList}
-        />
-
         {/* Intro Modal */}
         <IntroModal
           visible={showIntroModal}
           onClose={handleCloseIntroModal}
         />
 
-        {/* Recurring Task Modal */}
-        <RecurringTaskModal
-          visible={showRecurringModal}
+        {/* Floating Add Button */}
+        <FloatingAddButton
+          onPress={handleOpenBottomSheet}
+          onLongPress={handleOpenRecurringSheet}
+        />
+
+        {/* Bottom Sheet for Adding Task */}
+        <AddTaskBottomSheet
+          bottomSheetRef={bottomSheetRef}
           lists={lists}
+          canCreateMoreLists={canCreateMoreLists}
+          onAddTask={handleAddTask}
           onCreateList={handleCreateList}
           onDeleteList={handleDeleteList}
-          onClose={() => setShowRecurringModal(false)}
+        />
+
+        {/* Recurring Task Modal */}
+        <RecurringTaskModal
+          bottomSheetRef={recurringBottomSheetRef}
+          lists={lists}
+          canCreateMoreLists={canCreateMoreLists}
+          onCreateList={handleCreateList}
+          onDeleteList={handleDeleteList}
+          onClose={() => {}}
         />
 
       </SafeAreaView>

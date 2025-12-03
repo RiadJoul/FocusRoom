@@ -8,8 +8,9 @@ import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons, SimpleLineIc
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
-import { getPlanTypeFromRevenueCat } from '@/lib/revenuecat';
+import RevenueCatUI from 'react-native-purchases-ui';
+import Purchases from 'react-native-purchases';
+import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Profile() {
@@ -100,6 +101,13 @@ export default function Profile() {
             analytics.track(Events.SIGN_OUT);
             analytics.reset();
 
+            // Detach RevenueCat user
+            try {
+              await Purchases.logOut();
+            } catch (error) {
+              console.error('RevenueCat logOut error on sign out:', error);
+            }
+
             await supabase.auth.signOut();
             clearUser();
             router.replace('/login' as any);
@@ -115,39 +123,10 @@ export default function Profile() {
     setIsPresentingPaywall(true);
 
     try {
-      // Track paywall opened
-      const openTime = Date.now();
-      await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
-
-      const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
-
-      // Track paywall closed
-      const closeTime = Date.now();
-      const durationSeconds = Math.round((closeTime - openTime) / 1000);
-      await analytics.track(Events.PAYWALL_CLOSED, { user_id: user?.id, duration_seconds: durationSeconds });
-
-      switch (paywallResult) {
-        case PAYWALL_RESULT.NOT_PRESENTED:
-        case PAYWALL_RESULT.ERROR:
-        case PAYWALL_RESULT.CANCELLED:
-          return false;
-        case PAYWALL_RESULT.PURCHASED:
-          {
-            const planType = await getPlanTypeFromRevenueCat();
-            await analytics.track(Events.SUBSCRIPTION_STARTED, {
-              user_id: user?.id,
-              plan_type: planType ?? 'unknown',
-            });
-          }
-          return true;
-        case PAYWALL_RESULT.RESTORED:
-          return true;
-        default:
-          return false;
-      }
-    } catch (error) {
-      console.error('Paywall error:', error);
-      return false;
+      return await presentPaywallOnce({
+        userId: user?.id,
+        source: 'profile_screen',
+      });
     } finally {
       setIsPresentingPaywall(false);
     }
@@ -194,6 +173,12 @@ export default function Profile() {
               }
 
               // Clear local state + sign out
+              try {
+                await Purchases.logOut();
+              } catch (error) {
+                console.error('RevenueCat logOut error on delete account:', error);
+              }
+
               await supabase.auth.signOut();
               clearUser();
               setIsDeletingAccount(false);
@@ -309,7 +294,27 @@ export default function Profile() {
                       </Text>
                       <Ionicons name="pencil" size={16} color="#818CF8" style={{ marginLeft: 8 }} />
                     </TouchableOpacity>
-                   {user?.is_premium && <Ionicons name="planet-sharp" size={24} color="#a855f7" />}
+                    {/* make this view glowing */}
+                    {user?.is_premium && (
+                      <View style={{
+                        backgroundColor: '#A78BFA',
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 6,
+                        shadowColor: '#A78BFA',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0.7,
+                        shadowRadius: 10,
+                        elevation: 10,
+                      }}>
+                        <Text className="text-white font-primary-bold text-xs tracking-wider">FIRST CLASS</Text>
+                      </View>
+                    )}
+                    {!user?.is_premium && (
+                      <View className="bg-white/20 px-3 py-1.5 rounded-lg">
+                        <Text className="text-white font-primary-bold text-xs tracking-wider">ECONOMY</Text>
+                      </View>
+                    )}
                   </View>
                 )}
                 <Text className="text-gray-400 font-primary-medium text-sm mt-1">
@@ -345,10 +350,10 @@ export default function Profile() {
           <View className="bg-black px-6 py-5 mx-6 mb-6 rounded-2xl border-2 border-secondary/50">
 
             {/* Badge */}
-            <View className="flex-row items-center justify-center mb-2">
+            <View className="flex-row items-center justify-center mb-4">
               <View className="bg-primary/20 px-3 py-1 rounded-full">
                 <Text className="text-primary text-xs font-primary-bold uppercase tracking-wider">
-                  Upgrade to Premium
+                  Upgrade to First Class
                 </Text>
               </View>
             </View>
@@ -370,7 +375,7 @@ export default function Profile() {
               className="bg-white py-3.5 rounded-xl items-center shadow-lg"
             >
               <Text className="text-black font-primary-bold text-base">
-                Upgrade to Premium
+                Upgrade to First Class
               </Text>
             </TouchableOpacity>
 

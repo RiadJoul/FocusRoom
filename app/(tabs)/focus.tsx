@@ -1,3 +1,4 @@
+import DailyMotivation from '@/components/focus/DailyMotivation';
 import { FocusSessionScreen } from '@/components/focus/FocusSessionScreen';
 import { PlanetTrip } from '@/components/focus/PlanetTrips';
 import { TaskSelectionModal } from '@/components/focus/TaskSelectionModal';
@@ -10,9 +11,11 @@ import { getIncompleteTasks } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as StoreReview from 'expo-store-review';
 
 export default function FocusTab() {
   const navigation = useNavigation();
@@ -20,12 +23,19 @@ export default function FocusTab() {
   const user = useUserStore((state) => state.user);
   const tasks = useTaskStore((state) => state.tasks);
   const toggleComplete = useTaskStore((state) => state.toggleComplete);
-  const { stats, fetchStats, createSession } = useSessionStore();
+  const stats = useSessionStore((state) => state.stats);
+
+
+  //stats
+  const { fetchStats, createSession } = useSessionStore();
   const [sessionActive, setSessionActive] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<Task[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
   const [showTicket, setShowTicket] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+
+  // session visual type
+  const [sessionType, setSessionType] = useState<'3d' | 'map'>('map');
 
   const bottomSheetRef = useRef<BottomSheet>(null);
 
@@ -39,15 +49,15 @@ export default function FocusTab() {
   // Hide/show tab bar based on session state
   useEffect(() => {
     navigation.setOptions({
-      tabBarStyle: sessionActive 
-        ? { display: 'none' } 
+      tabBarStyle: sessionActive
+        ? { display: 'none' }
         : {
-            backgroundColor: '#0A0A0A',
-            borderTopColor: '#262626',
-            height: 60 + insets.bottom,
-            paddingBottom: insets.bottom,
-            paddingTop: 10,
-          },
+          backgroundColor: '#0A0A0A',
+          borderTopColor: '#262626',
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom,
+          paddingTop: 10,
+        },
     });
   }, [navigation, sessionActive, insets.bottom]);
 
@@ -57,17 +67,18 @@ export default function FocusTab() {
 
   const handleOpenTaskSelection = useCallback(() => {
     bottomSheetRef.current?.expand();
-    
+
     analytics.track(Events.TRIP_MODAL_OPENED, {
       [Properties.TASKS_COUNT]: incompleteTasks.length,
     });
   }, [incompleteTasks.length]);
 
-  const handleStartSession = useCallback((tasks: Task[], trip: PlanetTrip) => {
+  const handleStartSession = useCallback((tasks: Task[], trip: PlanetTrip, mode: 'map' | '3d') => {
     setSelectedTasks(tasks);
     setSelectedTrip(trip);
+    setSessionType(mode);
     setShowTicket(true);
-    
+
     analytics.track(Events.TRIP_SELECTED, {
       [Properties.TRIP_ID]: trip.id,
       [Properties.TRIP_NAME]: `${trip.from} → ${trip.to}`,
@@ -75,6 +86,7 @@ export default function FocusTab() {
       [Properties.DURATION_MINUTES]: Math.floor(trip.duration / 60),
       [Properties.DISTANCE_KM]: trip.distance_km,
       [Properties.TASKS_COUNT]: tasks.length,
+      session_type: mode,
     });
   }, []);
 
@@ -82,7 +94,7 @@ export default function FocusTab() {
     setShowTicket(false);
     setSessionActive(true);
     setSessionStartTime(new Date());
-    
+
     if (selectedTrip) {
       analytics.track(Events.SESSION_STARTED, {
         [Properties.TRIP_ID]: selectedTrip.id,
@@ -95,47 +107,71 @@ export default function FocusTab() {
     }
   }, [selectedTrip, selectedTasks]);
 
-  const handleEndSession = useCallback(async (duration: number, completedTaskIds: string[]) => {
-    if (!user?.id || !selectedTrip) return;
+  const handleEndSession = useCallback(
+    async (duration: number, completedTaskIds: string[]) => {
+      if (!user?.id || !selectedTrip) return;
 
-    try {
-      // Track session completion
-      analytics.track(Events.SESSION_COMPLETED, {
-        [Properties.TRIP_ID]: selectedTrip.id,
-        [Properties.TRIP_NAME]: `${selectedTrip.from} → ${selectedTrip.to}`,
-        [Properties.DURATION_SECONDS]: duration,
-        [Properties.DURATION_MINUTES]: Math.floor(duration / 60),
-        [Properties.DISTANCE_KM]: selectedTrip.distance_km,
-        [Properties.TASKS_COMPLETED]: completedTaskIds.length,
-        [Properties.TASKS_COUNT]: selectedTasks.length,
-        completed_percentage: Math.round((completedTaskIds.length / selectedTasks.length) * 100),
-      });
-      
-      // Increment user stats
-      analytics.incrementProperty('total_sessions', 1);
-      analytics.incrementProperty('total_minutes', Math.floor(duration / 60));
-      analytics.incrementProperty('total_distance_km', selectedTrip.distance_km);
-      
-      // Save session to database
-      await createSession({
-        user_id: user.id,
-        started_at: sessionStartTime?.toISOString() || new Date().toISOString(),
-        ended_at: new Date().toISOString(),
-        duration_seconds: duration,
-        tasks_completed: completedTaskIds.length,
-        trip_id: selectedTrip.id,
-        trip_name: `${selectedTrip.from} → ${selectedTrip.to}`,
-        distance_km: selectedTrip.distance_km,
-      });
-    } catch (error) {
-      console.error('Failed to save session:', error);
-    }
+      // Determine if this is the very first completed session (before saving).
+      const wasFirstSession = !stats || stats.totalSessions === 0;
 
-    setSessionActive(false);
-    setSelectedTasks([]);
-    setSelectedTrip(null);
-    setSessionStartTime(null);
-  }, [user?.id, selectedTrip, sessionStartTime, createSession, selectedTasks]);
+      try {
+        // Track session completion
+        analytics.track(Events.SESSION_COMPLETED, {
+          [Properties.TRIP_ID]: selectedTrip.id,
+          [Properties.TRIP_NAME]: `${selectedTrip.from} → ${selectedTrip.to}`,
+          [Properties.DURATION_SECONDS]: duration,
+          [Properties.DURATION_MINUTES]: Math.floor(duration / 60),
+          [Properties.DISTANCE_KM]: selectedTrip.distance_km,
+          [Properties.TASKS_COMPLETED]: completedTaskIds.length,
+          [Properties.TASKS_COUNT]: selectedTasks.length,
+          completed_percentage: Math.round(
+            (completedTaskIds.length / selectedTasks.length) * 100
+          ),
+        });
+
+        // Increment user stats
+        analytics.incrementProperty('total_sessions', 1);
+        analytics.incrementProperty('total_minutes', Math.floor(duration / 60));
+        analytics.incrementProperty('total_distance_km', selectedTrip.distance_km);
+
+        // Save session to database (also refreshes stats)
+        await createSession({
+          user_id: user.id,
+          started_at: sessionStartTime?.toISOString() || new Date().toISOString(),
+          ended_at: new Date().toISOString(),
+          duration_seconds: duration,
+          tasks_completed: completedTaskIds.length,
+          trip_id: selectedTrip.id,
+          trip_name: `${selectedTrip.from} → ${selectedTrip.to}`,
+          distance_km: selectedTrip.distance_km,
+        });
+
+        // If this was their very first session, softly ask for an App Store review on iOS.
+        if (wasFirstSession && Platform.OS === 'ios') {
+          try {
+            const alreadyPrompted = await AsyncStorage.getItem('has_app_review_prompted');
+            if (!alreadyPrompted) {
+              const available = await StoreReview.isAvailableAsync();
+              if (available) {
+                await StoreReview.requestReview();
+                await AsyncStorage.setItem('has_app_review_prompted', 'true');
+              }
+            }
+          } catch (err) {
+            console.warn('App review prompt failed:', err);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to save session:', error);
+      }
+
+      setSessionActive(false);
+      setSelectedTasks([]);
+      setSelectedTrip(null);
+      setSessionStartTime(null);
+    },
+    [user?.id, selectedTrip, sessionStartTime, createSession, selectedTasks, stats]
+  );
 
   const handleMarkTasksComplete = useCallback(async (taskIds: string[]) => {
     for (const taskId of taskIds) {
@@ -150,6 +186,7 @@ export default function FocusTab() {
         trip={selectedTrip}
         onEndSession={handleEndSession}
         onMarkTasksComplete={handleMarkTasksComplete}
+        mode={sessionType}
       />
     );
   }
@@ -175,28 +212,15 @@ export default function FocusTab() {
             </Text>
           </View>
 
-          {/* Stats Cards */}
-          <View className="flex-row gap-3 mb-6">
-            <View className="flex-1 bg-card rounded-2xl p-4">
-              <Text className="text-gray-400 font-primary-medium text-sm mb-1">Sessions</Text>
-              <Text className="text-white font-primary-bold text-2xl">{stats?.totalSessions || 0}</Text>
-            </View>
-            <View className="flex-1 bg-card rounded-2xl p-4">
-              <Text className="text-gray-400 font-primary-medium text-sm mb-1">Minutes</Text>
-              <Text className="text-white font-primary-bold text-2xl">{stats?.totalMinutes || 0}</Text>
-            </View>
-            <View className="flex-1 bg-card rounded-2xl p-4">
-              <Text className="text-gray-400 font-primary-medium text-sm mb-1">Tasks</Text>
-              <Text className="text-white font-primary-bold text-2xl">{stats?.tasksCompleted || 0}</Text>
-            </View>
-          </View>
+          <DailyMotivation stats={stats} />
+
 
           {/* Main Focus Card */}
-          <View className="bg-card rounded-3xl p-8 mb-6 items-center">
+          <View className="bg-card rounded-2xl p-8 mb-6 mt-4 items-center">
             <Text className="text-white font-primary-bold text-2xl mb-3 text-center">
               Ready to Focus?
             </Text>
-          
+
             <TouchableOpacity
               onPress={handleOpenTaskSelection}
               disabled={incompleteTasks.length === 0}
@@ -217,52 +241,6 @@ export default function FocusTab() {
               </Text>
             )}
           </View>
-
-          {/* How it Works */}
-          <View className="mb-8">
-            <Text className="text-secondary/80 font-primary-semibold text-xl mb-4">
-              How it works:
-            </Text>
-            <View className="gap-4">
-              <View className="flex-row items-start">
-                <View className="w-8 h-8 bg-primary/10 rounded-full items-center justify-center mr-3">
-                  <Text className="text-secondary font-primary-bold">1</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white font-primary-semibold mb-1">Select Tasks</Text>
-                  <Text className="text-gray-400 font-primary-regular">
-                    Choose up to 3 tasks you want to focus on
-                  </Text>
-                </View>
-              </View>
-              <View className="flex-row items-start">
-                <View className="w-8 h-8 bg-primary/10 rounded-full items-center justify-center mr-3">
-                  <Text className="text-secondary font-primary-bold">2</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white font-primary-semibold mb-1">Lock In</Text>
-                  <Text className="text-gray-400 font-primary-regular">
-                    Enter immersive focus mode with timer
-                  </Text>
-                </View>
-              </View>
-              <View className="flex-row items-start">
-                <View className="w-8 h-8 bg-primary/10 rounded-full items-center justify-center mr-3">
-                  <Text className="text-secondary font-primary-bold">3</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white font-primary-semibold mb-1">Complete & Track</Text>
-                  <Text className="text-gray-400 font-primary-regular">
-                    Mark tasks complete and track your progress
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          
-
-
         </ScrollView>
 
         {/* Task Selection Bottom Sheet */}

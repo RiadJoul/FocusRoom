@@ -44,7 +44,7 @@ export function WeekCalendar({ selectedDay, today, onDaySelect }: WeekCalendarPr
                 className="text-xs font-primary-semibold mb-2"
                 style={{ color: dayColor }}
               >
-                {WEEK_DAYS[index]}
+                {WEEK_DAYS[date.getDay()]}
               </Text>
               <View 
                 className="w-14 h-16 rounded-xl items-center justify-center"

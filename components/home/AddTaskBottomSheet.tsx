@@ -1,48 +1,34 @@
 import { TaskList } from '@/lib/stores/listStore';
 import { formatDueDate, getFutureDates } from '@/lib/utils/dateUtils';
-import { getQuickActions, getTaskSuggestions } from '@/lib/utils/taskSuggestions';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Keyboard, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { ListCreateModal } from './ListCreateModal';
+import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 
 interface AddTaskBottomSheetProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
   lists: TaskList[];
+  canCreateMoreLists: boolean;
   onAddTask: (title: string, priority: 'low' | 'medium' | 'high', listId: string, dueDate: string | null) => Promise<void>;
-  onCreateList: (title: string, icon: string) => Promise<TaskList | null>;
+  onCreateList: (title: string, icon: string, color?: string) => Promise<TaskList | null>;
   onDeleteList: (listId: string, listTitle: string) => Promise<void>;
 }
-
-// Common list icons
-export const LIST_ICONS = [
-  { name: 'briefcase-outline', label: 'Work' },
-  { name: 'code-slash-outline', label: 'Coding' },
-  { name: 'book-outline', label: 'Study' },
-  { name: 'calculator-outline', label: 'Math' },
-  { name: 'flask-outline', label: 'Science' },
-  { name: 'leaf-outline', label: 'Biology' },
-  { name: 'language-outline', label: 'Language' },
-  { name: 'pencil-outline', label: 'Writing' },
-  { name: 'document-text-outline', label: 'Assignment' },
-  { name: 'school-outline', label: 'School' },
-  { name: 'desktop-outline', label: 'Computer' },
-  { name: 'clipboard-outline', label: 'Project' },
-  { name: 'bulb-outline', label: 'Ideas' },
-  { name: 'rocket-outline', label: 'Goals' },
-  { name: 'star-outline', label: 'Important' },
-  { name: 'list-outline', label: 'General' },
-];
 
 export function AddTaskBottomSheet({
   bottomSheetRef,
   lists,
+  canCreateMoreLists,
   onAddTask,
   onCreateList,
   onDeleteList
 }: AddTaskBottomSheetProps) {
-  const snapPoints = useMemo(() => ['75%', '90%'], []);
+  const snapPoints = useMemo(() => ['25%', '40%'], []);
+
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Task Form State
   const [taskTitle, setTaskTitle] = useState('');
@@ -51,15 +37,7 @@ export function AddTaskBottomSheet({
   const [selectedDueDate, setSelectedDueDate] = useState<Date | null>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // AI Suggestions State
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [quickActions, setQuickActions] = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  // List Creation State
-  const [isCreatingList, setIsCreatingList] = useState(false);
-  const [newListTitle, setNewListTitle] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState('list-outline');
+  const [showListCreator, setShowListCreator] = useState(false);
 
   // Set default list when lists change
   React.useEffect(() => {
@@ -68,30 +46,7 @@ export function AddTaskBottomSheet({
     }
   }, [lists, selectedListId]);
 
-  // Update suggestions when input or context changes
-  useEffect(() => {
-    const selectedList = lists.find(l => l.id === selectedListId);
-    const context = {
-      listName: selectedList?.title,
-      priority: selectedPriority,
-      dueDate: selectedDueDate || undefined,
-    };
 
-    // Get quick actions for empty input
-    if (taskTitle.length === 0) {
-      setQuickActions(getQuickActions(context));
-      setSuggestions([]);
-      setShowSuggestions(false);
-    } else if (taskTitle.length >= 2) {
-      // Get suggestions for partial input
-      const newSuggestions = getTaskSuggestions(taskTitle, context);
-      setSuggestions(newSuggestions);
-      setShowSuggestions(newSuggestions.length > 0);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
-    }
-  }, [taskTitle, selectedListId, selectedPriority, selectedDueDate, lists]);
 
   const handleCloseBottomSheet = useCallback(() => {
     bottomSheetRef.current?.close();
@@ -99,12 +54,10 @@ export function AddTaskBottomSheet({
     // Reset form states
     setTaskTitle('');
     setSelectedPriority('medium');
-    setIsCreatingList(false);
-    setNewListTitle('');
+    setStep(1);
     setSelectedDueDate(new Date());
     setShowDatePicker(false);
-    setSuggestions([]);
-    setShowSuggestions(false);
+
   }, [bottomSheetRef]);
 
   const renderBackdrop = useCallback(
@@ -118,6 +71,27 @@ export function AddTaskBottomSheet({
     ),
     []
   );
+
+  const goToNextStep = () => {
+    if (step === 1) {
+      if (!taskTitle.trim() || !selectedListId) return;
+      setStep(2);
+      Keyboard.dismiss();
+    } else if (step === 2) {
+      setShowDatePicker(false);
+      setStep(3);
+      Keyboard.dismiss();
+    }
+  };
+
+  const goToPreviousStep = () => {
+    if (step === 2) {
+      setStep(1);
+    } else if (step === 3) {
+      setStep(2);
+      setShowDatePicker(false);
+    }
+  };
 
   const handleAddTask = async () => {
     if (!taskTitle.trim() || !selectedListId || !selectedDueDate) return;
@@ -142,402 +116,391 @@ export function AddTaskBottomSheet({
 
 
 
-  const handleCreateList = async () => {
-    if (!newListTitle.trim()) return;
-
-    const newList = await onCreateList(newListTitle.trim(), selectedIcon);
-
-    if (newList) {
-      setSelectedListId(newList.id);
-      setNewListTitle('');
-      setSelectedIcon('list-outline');
-      setIsCreatingList(false);
-    }
-  };
-
-  const handleCancelCreateList = () => {
-    setNewListTitle('');
-    setSelectedIcon('list-outline');
-    setIsCreatingList(false);
-  };
-
   const futureDates = useMemo(() => getFutureDates(14), []);
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: '#0C0C0D' }}
-      handleIndicatorStyle={{ backgroundColor: '#6B7280' }}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      android_keyboardInputMode="adjustResize"
-    >
-      <BottomSheetView style={{ flex: 1, paddingHorizontal: 20 }}>
-        <Text className="text-white font-primary-bold text-2xl mb-6">Add New Task</Text>
-
-        {/* No Lists Warning */}
-        {lists.length === 0 && !isCreatingList && (
-          <View className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-4">
-            <Text className="text-yellow-500 font-primary-semibold text-sm">
-              ⚠️ Please create a list first to organize your tasks
-            </Text>
-          </View>
-        )}
-
-        {/* Task Title Input */}
-        <View className="mb-4">
-          <Text className="text-gray-400 font-primary-medium text-sm mb-2">Task Title</Text>
-          <BottomSheetTextInput
-            style={{
-              backgroundColor: 'rgba(17, 24, 39, 0.5)',
-              borderWidth: 1,
-              borderColor: '#1F2937',
-              borderRadius: 12,
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              color: '#FFFFFF',
-              fontSize: 16,
-            }}
-            placeholder="What do you need to do?"
-            placeholderTextColor="#6B7280"
-            value={taskTitle}
-            onChangeText={setTaskTitle}
-            editable={lists.length > 0 || isCreatingList}
-          />
-
-          {/* Quick Actions (shown when input is empty) */}
-          {taskTitle.length === 0 && quickActions.length > 0 && (
-            <View className="mt-2">
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8 }}
-              >
-                {quickActions.map((action, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setTaskTitle(action + ' ');
-                    }}
-                    className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/30"
-                    activeOpacity={0.7}
-                  >
-                    <Text className="text-primary font-primary-medium text-sm">{action}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Smart Suggestions */}
-          {showSuggestions && suggestions.length > 0 && (
-            <View className="mt-2 bg-gray-900/80 border border-gray-800 rounded-xl overflow-hidden">
-              {suggestions.map((suggestion, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setTaskTitle(suggestion);
-                    setShowSuggestions(false);
-                  }}
-                  className={`px-4 py-3 flex-row items-center ${
-                    index < suggestions.length - 1 ? 'border-b border-gray-800' : ''
-                  }`}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="bulb-outline" size={16} color="#9CA3AF" />
-                  <Text className="text-gray-300 font-primary-regular text-sm ml-2 flex-1">
-                    {suggestion}
-                  </Text>
-                  <Ionicons name="arrow-forward" size={14} color="#6B7280" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+    <>
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: '#0C0C0D' }}
+        handleIndicatorStyle={{ backgroundColor: '#6B7280' }}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
+      >
+        <BottomSheetView style={{ flex: 1, paddingHorizontal: 20 }}>
+        <View className="flex-row items-center justify-between mb-4">
+          <Text className="text-white font-primary-bold text-xl">Add New Task</Text>
+          <Text className="text-gray-500 font-primary-medium text-xs">
+            Step {step} of 3
+          </Text>
         </View>
 
-        {/* Priority Selection */}
-        <View className="mb-4">
-          <Text className="text-gray-400 font-primary-medium text-sm mb-2">Priority</Text>
-          <View className="flex-row gap-3">
-            {(['low', 'medium', 'high'] as const).map((priority) => (
+        {/* STEP 1: Task Title + List */}
+        {step === 1 && (
+          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} className="mb-6">
+            <Text className="text-gray-500 font-primary-medium text-xs mb-1">
+              What are you working on?
+            </Text>
+            <BottomSheetTextInput
+              style={{
+                backgroundColor: 'transparent',
+                borderWidth: 0,
+                borderBottomWidth: 1,
+                borderBottomColor: '#1F2937',
+                paddingHorizontal: 0,
+                paddingVertical: 10,
+                color: '#FFFFFF',
+                fontSize: 20,
+                fontWeight: '600',
+              }}
+              placeholder="Type a task…"
+              placeholderTextColor="#4B5563"
+              value={taskTitle}
+              onChangeText={setTaskTitle}
+              editable
+            />
+
+            
+
+
+            {/* List selection inline with title */}
+            <View className="mt-6">
+
+              {lists.length === 0 && (
+                <View className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
+                  <Text className="text-yellow-500 font-primary-semibold text-xs">
+                    ⚠️ Create a list first to organize this task
+                  </Text>
+                </View>
+              )}
+
+            {/* List Selection Chips – wrap like pills */}
+            <View className="flex-row flex-wrap gap-3 mt-4">
+              {lists.map((list) => (
+                <TouchableOpacity
+                  key={list.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedListId(list.id);
+                  }}
+                  onLongPress={() => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                    onDeleteList(list.id, list.title);
+                    if (selectedListId === list.id) {
+                      const remainingLists = lists.filter(l => l.id !== list.id);
+                      setSelectedListId(remainingLists[0]?.id ?? '');
+                    }
+                  }}
+                  className="px-4 py-3 rounded-full flex-row items-center gap-2"
+                  style={{
+                    backgroundColor: `${list.color}4D`,
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={list.icon as any}
+                    size={18}
+                    color={list.color}
+                    style={{
+                      opacity: selectedListId === list.id ? 1 : 0.5,
+                    }}
+                  />
+                  <Text
+                    className="font-primary-semibold text-lg"
+                    style={{
+                      color: list.color,
+                      opacity: selectedListId === list.id ? 1 : 0.5,
+                    }}
+                  >
+                    {list.title}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              {/* New list pill */}
               <TouchableOpacity
-                key={priority}
-                onPress={() => setSelectedPriority(priority)}
-                disabled={lists.length === 0 && !isCreatingList}
-                className={`flex-1 py-3 rounded-xl border items-center ${selectedPriority === priority
-                  ? priority === 'high'
-                    ? 'bg-red-500/10 border-red-500'
-                    : priority === 'medium'
-                      ? 'bg-yellow-500/10 border-yellow-500'
-                      : 'bg-green-500/10 border-green-500'
-                  : 'bg-gray-900/50 border-gray-800'
-                  }`}
+                onPress={() => {
+                  if (!canCreateMoreLists) {
+                    presentPaywallOnce();
+                    return;
+                  }
+                  setShowListCreator(true);
+                }}
+             
+                className={`px-4 py-3 rounded-full flex-row items-center gap-2 border ${
+                  canCreateMoreLists
+                    ? 'bg-primary/10 border-dashed border-primary/60'
+                    : 'bg-secondary/10 border-secondary'
+                }`}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={16} color="#E4F964" />
+                <Text className="text-primary font-primary-semibold text-base">
+                  New
+                </Text>
+              </TouchableOpacity>
+            </View>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* STEP 2: Due Date */}
+        {step === 2 && (
+          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} className="mb-6">
+            <Text className="text-gray-400 font-primary-medium text-sm mb-2">
+              When do you want to do it?
+            </Text>
+            <View className="flex-row gap-2">
+              {/* Today Button */}
+              <TouchableOpacity
+                onPress={handleSetToday}
+                className={`flex-1 py-3 rounded-xl border items-center ${
+                  selectedDueDate && formatDueDate(selectedDueDate) === 'Today'
+                    ? 'bg-primary/10 border-primary'
+                    : 'bg-gray-900/50 border-gray-800'
+                }`}
                 activeOpacity={0.7}
               >
                 <Text
-                  className={`font-primary-semibold capitalize ${selectedPriority === priority
-                    ? priority === 'high'
-                      ? 'text-red-500'
-                      : priority === 'medium'
-                        ? 'text-yellow-500'
-                        : 'text-green-500'
-                    : 'text-gray-400'
-                    }`}
+                  className={`font-primary-semibold text-sm ${
+                    selectedDueDate && formatDueDate(selectedDueDate) === 'Today'
+                      ? 'text-primary'
+                      : 'text-gray-400'
+                  }`}
                 >
-                  {priority}
+                  📅 Today
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
-        {/* Due Date Selection */}
-        <View className="mb-4">
-          <Text className="text-gray-400 font-primary-medium text-sm mb-2">Due Date</Text>
-          <View className="flex-row gap-2">
-            {/* Today Button */}
-            <TouchableOpacity
-              onPress={handleSetToday}
-              className={`flex-1 py-3 rounded-xl border items-center ${selectedDueDate && formatDueDate(selectedDueDate) === 'Today'
-                ? 'bg-primary/10 border-primary'
-                : 'bg-gray-900/50 border-gray-800'
-                }`}
-              activeOpacity={0.7}
-            >
-              <Text
-                className={`font-primary-semibold text-sm ${selectedDueDate && formatDueDate(selectedDueDate) === 'Today'
-                  ? 'text-primary'
-                  : 'text-gray-400'
-                  }`}
-              >
-                📅 Today
-              </Text>
-            </TouchableOpacity>
-
-            {/* Tomorrow Button */}
-            <TouchableOpacity
-              onPress={handleSetTomorrow}
-              className={`flex-1 py-3 rounded-xl border items-center ${selectedDueDate && formatDueDate(selectedDueDate) === 'Tomorrow'
-                ? 'bg-primary/10 border-primary'
-                : 'bg-gray-900/50 border-gray-800'
-                }`}
-              activeOpacity={0.7}
-            >
-              <Text
-                className={`font-primary-semibold text-sm ${selectedDueDate && formatDueDate(selectedDueDate) === 'Tomorrow'
-                  ? 'text-primary'
-                  : 'text-gray-400'
-                  }`}
-              >
-                🗓️ Tomorrow
-              </Text>
-            </TouchableOpacity>
-
-            {/* Custom Date Button */}
-            <TouchableOpacity
-              onPress={() => setShowDatePicker(!showDatePicker)}
-              className={`flex-1 py-3 rounded-xl border items-center ${selectedDueDate && formatDueDate(selectedDueDate) !== 'Today' && formatDueDate(selectedDueDate) !== 'Tomorrow'
-                ? 'bg-primary/10 border-primary'
-                : 'bg-gray-900/50 border-gray-800'
-                }`}
-              activeOpacity={0.7}
-            >
-              <Text
-                className={`font-primary-semibold text-sm ${selectedDueDate && formatDueDate(selectedDueDate) !== 'Today' && formatDueDate(selectedDueDate) !== 'Tomorrow'
-                  ? 'text-primary'
-                  : 'text-gray-400'
-                  }`}
-              >
-                {selectedDueDate && formatDueDate(selectedDueDate) !== 'Today' && formatDueDate(selectedDueDate) !== 'Tomorrow'
-                  ? formatDueDate(selectedDueDate)
-                  : '📆 Other'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Date Picker */}
-          {showDatePicker && (
-            <View className="mt-3 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-              <Text className="text-white font-primary-semibold text-sm mb-3">Select Date</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {futureDates.map((date, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    onPress={() => {
-                      setSelectedDueDate(date);
-                      setShowDatePicker(false);
-                    }}
-                    className="bg-gray-800 px-3 py-2 rounded-lg border border-gray-700"
-                    activeOpacity={0.7}
-                  >
-                    <Text className="text-gray-300 font-primary-medium text-xs">
-                      {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* List Selection */}
-        <View className="mb-6">
-          <Text className="text-gray-400 font-primary-medium text-sm mb-2">List</Text>
-
-          {isCreatingList ? (
-            // Create New List Form
-            <View className="bg-slate-900/50 border border-slate-800 rounded-xl p-3">
-              <BottomSheetTextInput
-                style={{
-                  color: '#FFFFFF',
-                  fontSize: 16,
-                  marginBottom: 12,
-                  paddingVertical: 4,
-                }}
-                placeholder="Enter list name..."
-                placeholderTextColor="#6B7280"
-                value={newListTitle}
-                onChangeText={setNewListTitle}
-                autoFocus
-              />
-
-              {/* Icon Selection */}
-              <Text className="text-gray-400 font-primary-medium text-xs mb-2">Select Icon</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                className="mb-3"
-                contentContainerStyle={{ gap: 8 }}
-              >
-                {LIST_ICONS.map((icon) => (
-                  <TouchableOpacity
-                    key={icon.name}
-                    onPress={() => setSelectedIcon(icon.name)}
-                    className={`w-12 h-12 rounded-lg items-center justify-center border ${selectedIcon === icon.name
-                        ? 'bg-primary/20 border-primary'
-                        : 'bg-gray-800 border-gray-700'
-                      }`}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={icon.name as any}
-                      size={20}
-                      color={selectedIcon === icon.name ? '#8F8F8F' : '#9CA3AF'}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <View className="flex-row gap-2">
-                <TouchableOpacity
-                  onPress={handleCancelCreateList}
-                  className="flex-1 py-2 rounded-lg bg-gray-800 items-center"
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-gray-400 font-primary-medium text-sm">Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleCreateList}
-                  disabled={!newListTitle.trim()}
-                  className={`flex-1 py-2 rounded-lg items-center ${newListTitle.trim() ? 'bg-primary' : 'bg-gray-800'
-                    }`}
-                  activeOpacity={0.7}
-                >
-                  <Text className={`font-primary-semibold text-sm ${newListTitle.trim() ? 'text-background' : 'text-gray-600'
-                    }`}>
-                    Create
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            // List Selection Chips
-            <View className="flex-row items-center">
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
-                {lists.map((list) => (
-                  <TouchableOpacity
-                    key={list.id}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setSelectedListId(list.id);
-                    }}
-                    onLongPress={() => {
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                      // Call delete with list title for confirmation
-                      onDeleteList(list.id, list.title);
-                      // Update selected list if we're deleting the current one
-                      if (selectedListId === list.id) {
-                        const remainingLists = lists.filter(l => l.id !== list.id);
-                        if (remainingLists.length > 0) {
-                          setSelectedListId(remainingLists[0].id);
-                        } else {
-                          setSelectedListId('');
-                        }
-                      }
-                    }}
-                    className={`mr-2 px-4 py-3 rounded-xl border flex-row items-center gap-2 ${selectedListId === list.id
-                        ? 'bg-primary/10 border-primary'
-                        : 'bg-gray-900/50 border-gray-800'
-                      }`}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={list.icon as any}
-                      size={16}
-                      color={selectedListId === list.id ? '#E4F964' : '#6B7280'}
-                    />
-                    <Text
-                      className={`font-primary-semibold text-sm ${selectedListId === list.id ? 'text-primary' : 'text-gray-400'
-                        }`}
-                    >
-                      {list.title}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {/* Tomorrow Button */}
               <TouchableOpacity
-                onPress={() => setIsCreatingList(true)}
-                className="ml-4 px-4 py-2 rounded-lg border border-dashed border-primary/50 bg-primary/5"
+                onPress={handleSetTomorrow}
+                className={`flex-1 py-3 rounded-xl border items-center ${
+                  selectedDueDate && formatDueDate(selectedDueDate) === 'Tomorrow'
+                    ? 'bg-primary/10 border-primary'
+                    : 'bg-gray-900/50 border-gray-800'
+                }`}
                 activeOpacity={0.7}
               >
-                <Text className="text-primary font-primary-semibold">+</Text>
+                <Text
+                  className={`font-primary-semibold text-sm ${
+                    selectedDueDate && formatDueDate(selectedDueDate) === 'Tomorrow'
+                      ? 'text-primary'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  🗓️ Tomorrow
+                </Text>
+              </TouchableOpacity>
+
+              {/* Custom Date Button */}
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(!showDatePicker)}
+                className={`flex-1 py-3 rounded-xl border items-center ${
+                  selectedDueDate &&
+                  formatDueDate(selectedDueDate) !== 'Today' &&
+                  formatDueDate(selectedDueDate) !== 'Tomorrow'
+                    ? 'bg-primary/10 border-primary'
+                    : 'bg-gray-900/50 border-gray-800'
+                }`}
+                activeOpacity={0.7}
+              >
+                <Text
+                  className={`font-primary-semibold text-sm ${
+                    selectedDueDate &&
+                    formatDueDate(selectedDueDate) !== 'Today' &&
+                    formatDueDate(selectedDueDate) !== 'Tomorrow'
+                      ? 'text-primary'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  {selectedDueDate &&
+                  formatDueDate(selectedDueDate) !== 'Today' &&
+                  formatDueDate(selectedDueDate) !== 'Tomorrow'
+                    ? formatDueDate(selectedDueDate)
+                    : '📆 Other'}
+                </Text>
               </TouchableOpacity>
             </View>
-          )}
-        </View>
+
+            {/* Date Picker */}
+            {showDatePicker && (
+              <View className="mt-3 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+                <Text className="text-white font-primary-semibold text-sm mb-3">
+                  Select Date
+                </Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {futureDates.map((date, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => {
+                        setSelectedDueDate(date);
+                        setShowDatePicker(false);
+                      }}
+                      className="bg-gray-800 px-3 py-2 rounded-lg border border-gray-700"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-gray-300 font-primary-medium text-xs">
+                        {date.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+          </Animated.View>
+        )}
+
+        {/* STEP 3: Priority */}
+        {step === 3 && (
+          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)} className="mb-4">
+            {/* Priority Selection */}
+            <View className="mb-4">
+              <Text className="text-gray-400 font-primary-medium text-sm mb-2">
+                Priority
+              </Text>
+              <View className="flex-row gap-3">
+                {(['low', 'medium', 'high'] as const).map((priority) => (
+                  <TouchableOpacity
+                    key={priority}
+                    onPress={() => setSelectedPriority(priority)}
+                    disabled={lists.length === 0}
+                    className={`flex-1 py-3 rounded-xl border items-center ${
+                      selectedPriority === priority
+                        ? priority === 'high'
+                          ? 'bg-red-500/10 border-red-500'
+                          : priority === 'medium'
+                          ? 'bg-yellow-500/10 border-yellow-500'
+                          : 'bg-green-500/10 border-green-500'
+                        : 'bg-gray-900/50 border-gray-800'
+                    }`}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      className={`font-primary-semibold capitalize ${
+                        selectedPriority === priority
+                          ? priority === 'high'
+                            ? 'text-red-500'
+                            : priority === 'medium'
+                            ? 'text-yellow-500'
+                            : 'text-green-500'
+                          : 'text-gray-400'
+                      }`}
+                    >
+                      {priority}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Action Buttons */}
-        <View className="flex-row gap-3">
-          <TouchableOpacity
-            onPress={handleCloseBottomSheet}
-            className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
-            activeOpacity={0.8}
-          >
-            <Text className="text-gray-400 font-primary-semibold text-base">Cancel</Text>
-          </TouchableOpacity>
+        <View className="flex-row gap-3 mt-auto pb-2">
+          {step === 1 && (
+            <>
+              <TouchableOpacity
+                onPress={goToNextStep}
+                disabled={!taskTitle.trim() || !selectedListId}
+                className={`flex-1 py-4 rounded-xl items-center ${
+                  taskTitle.trim() && selectedListId ? 'bg-secondary' : 'bg-gray-800'
+                }`}
+                activeOpacity={0.8}
+              >
+                <Text
+                  className={`font-primary-bold text-base ${
+                    taskTitle.trim() && selectedListId ? 'text-background' : 'text-gray-600'
+                  }`}
+                >
+                  Next
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
 
-          <TouchableOpacity
-            onPress={handleAddTask}
-            disabled={!taskTitle.trim() || !selectedListId || !selectedDueDate}
-            className={`flex-1 py-4 rounded-xl items-center ${taskTitle.trim() && selectedListId && selectedDueDate
-              ? 'bg-primary'
-              : 'bg-gray-800'
-              }`}
-            activeOpacity={0.8}
-          >
-            <Text className={`font-primary-bold text-base ${taskTitle.trim() && selectedListId && selectedDueDate ? 'text-background' : 'text-gray-600'
-              }`}>
-              Add Task
-            </Text>
-          </TouchableOpacity>
+          {step === 2 && (
+            <>
+              <TouchableOpacity
+                onPress={goToPreviousStep}
+                className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
+                activeOpacity={0.8}
+              >
+                <Text className="text-gray-400 font-primary-semibold text-base">
+                  Back
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={goToNextStep}
+                className="flex-1 py-4 rounded-xl items-center bg-secondary"
+                activeOpacity={0.8}
+              >
+                <Text className="font-primary-bold text-base text-background">
+                  Next
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <TouchableOpacity
+                onPress={goToPreviousStep}
+                className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
+                activeOpacity={0.8}
+              >
+                <Text className="text-gray-400 font-primary-semibold text-base">
+                  Back
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleAddTask}
+                disabled={!taskTitle.trim() || !selectedListId || !selectedDueDate}
+                className={`flex-1 py-4 rounded-xl items-center ${
+                  taskTitle.trim() && selectedListId && selectedDueDate
+                    ? 'bg-secondary'
+                    : 'bg-gray-800'
+                }`}
+                activeOpacity={0.8}
+              >
+                <Text
+                  className={`font-primary-bold text-base ${
+                    taskTitle.trim() && selectedListId && selectedDueDate
+                      ? 'text-background'
+                      : 'text-gray-600'
+                  }`}
+                >
+                  Add Task
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
-      </BottomSheetView>
-    </BottomSheet>
+        </BottomSheetView>
+      </BottomSheet>
+
+      <ListCreateModal
+        visible={showListCreator}
+        onClose={() => setShowListCreator(false)}
+        onCreate={async (title, icon, color) => {
+          const newList = await onCreateList(title, icon, color);
+          if (newList) {
+            setSelectedListId(newList.id);
+          }
+        }}
+      />
+    </>
   );
 }
+
+// Attach fun list creator modal to reuse in parent screens if needed
+export { LIST_ICONS } from './listIcons';

@@ -4,11 +4,11 @@ import { analytics, Events } from '@/lib/analytics';
 import { formatDueDate } from '@/lib/utils/dateUtils';
 import { getPriorityColor } from '@/lib/utils/taskUtils';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
-import { getPlanTypeFromRevenueCat } from '@/lib/revenuecat';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { PLANET_TRIPS, PlanetTrip, formatDistance, formatDuration } from './PlanetTrips';
 
 interface TaskSelectionModalProps {
@@ -23,7 +23,23 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
   const [step, setStep] = useState<'tasks' | 'planet' | 'mode'>('tasks');
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
+  const [remaining3DTrials, setRemaining3DTrials] = useState<number | null>(null);
   const snapPoints = useMemo(() => ['75%', '90%'], []);
+
+  useEffect(() => {
+    const loadTrials = async () => {
+      try {
+        const storageKey = `free_3d_sessions_${user?.id || 'guest'}`;
+        const stored = await AsyncStorage.getItem(storageKey);
+        const used = stored ? parseInt(stored, 10) || 0 : 0;
+        setRemaining3DTrials(Math.max(0, 2 - used));
+      } catch {
+        setRemaining3DTrials(null);
+      }
+    };
+
+    loadTrials();
+  }, [user?.id]);
 
   const handleToggleTask = (taskId: string) => {
     setSelectedTaskIds(prev => {
@@ -43,6 +59,8 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
   const handleNext = () => {
     if (selectedTaskIds.size > 0) {
       setStep('planet');
+      // Ensure the sheet is fully expanded so all trips are visible
+      bottomSheetRef.current?.snapToIndex(1);
     }
   };
 
@@ -63,40 +81,10 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     setIsPresentingPaywall(true);
 
     try {
-      const openTime = Date.now();
-      await analytics.track(Events.PAYWALL_VIEWED, { user_id: user?.id });
-
-      const paywallResult: PAYWALL_RESULT = await RevenueCatUI.presentPaywall();
-
-      const closeTime = Date.now();
-      const durationSeconds = Math.round((closeTime - openTime) / 1000);
-      await analytics.track(Events.PAYWALL_CLOSED, {
-        user_id: user?.id,
-        duration_seconds: durationSeconds,
+      return await presentPaywallOnce({
+        userId: user?.id,
+        source: 'task_selection_modal',
       });
-
-      switch (paywallResult) {
-        case PAYWALL_RESULT.NOT_PRESENTED:
-        case PAYWALL_RESULT.ERROR:
-        case PAYWALL_RESULT.CANCELLED:
-          return false;
-        case PAYWALL_RESULT.PURCHASED:
-          {
-            const planType = await getPlanTypeFromRevenueCat();
-            await analytics.track(Events.SUBSCRIPTION_STARTED, {
-              user_id: user?.id,
-              plan_type: planType ?? 'unknown',
-            });
-          }
-          return true;
-        case PAYWALL_RESULT.RESTORED:
-          return true;
-        default:
-          return false;
-      }
-    } catch (error) {
-      console.error('Paywall error:', error);
-      return false;
     } finally {
       setIsPresentingPaywall(false);
     }
@@ -108,10 +96,28 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     if (selectedTasks.length === 0) return;
 
     if (mode === '3d' && !user?.is_premium) {
-      const unlocked = await presentPaywall();
-      // If purchase not completed/restored, do not start 3D session
-      if (!unlocked && !useUserStore.getState().user?.is_premium) {
-        return;
+      try {
+        const storageKey = `free_3d_sessions_${user?.id || 'guest'}`;
+        const stored = await AsyncStorage.getItem(storageKey);
+        const used = stored ? parseInt(stored, 10) || 0 : 0;
+
+        if (used < 2) {
+          const nextUsed = used + 1;
+          await AsyncStorage.setItem(storageKey, String(nextUsed));
+          setRemaining3DTrials(Math.max(0, 2 - nextUsed));
+        } else {
+          const unlocked = await presentPaywall();
+          // If purchase not completed/restored, do not start 3D session
+          if (!unlocked && !useUserStore.getState().user?.is_premium) {
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('3D free sessions tracking error:', err);
+        const unlocked = await presentPaywall();
+        if (!unlocked && !useUserStore.getState().user?.is_premium) {
+          return;
+        }
       }
     }
 
@@ -139,19 +145,107 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
   today.setHours(0, 0, 0, 0);
 
   // Filter only incomplete tasks and tasks due today
-  const tasksToShow = tasks.filter(task => task.status !== 'completed' && (!task.due_date || new Date(task.due_date).setHours(0, 0, 0, 0) === today.getTime()));
+  const tasksToShow = tasks.filter(
+    (task) =>
+      task.status !== 'completed' &&
+      (!task.due_date ||
+        new Date(task.due_date).setHours(0, 0, 0, 0) === today.getTime())
+  );
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: '#0C0C0D' }}
-      handleIndicatorStyle={{ backgroundColor: '#6B7280' }}
-    >
-      <BottomSheetView style={{ flex: 1, paddingHorizontal: 20 }}>
+    <>
+      {/* Fullscreen Trip Selection Modal */}
+      <Modal
+        visible={step === 'planet'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setStep('tasks')}
+      >
+        <View className="flex-1 bg-background px-5 pt-6 pb-4">
+          <TouchableOpacity onPress={() => setStep('tasks')} className="mb-4">
+            <Text className="text-primary font-primary-semibold text-sm">
+              ← Back to Tasks
+            </Text>
+          </TouchableOpacity>
+
+          <Text className="text-white font-primary-bold text-2xl mb-2">
+            Choose Your Trip
+          </Text>
+          <Text className="text-gray-400 font-primary-medium text-sm mb-6">
+            Select your journey duration
+          </Text>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 32 }}
+          >
+            {PLANET_TRIPS.map((trip) => (
+              <TouchableOpacity
+                key={trip.id}
+                onPress={() => handleSelectTrip(trip)}
+                className="mb-4 rounded-3xl overflow-hidden"
+                
+              >
+                <View className="relative">
+                  {/* Background image */}
+                  <Image
+                    source={trip.image}
+                    style={{ width: '100%', height: 160 }}
+                    contentFit="cover"
+                  />
+                  {/* Dark overlay for text readability */}
+                  <View
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundColor: '#000000CC',
+                    }}
+                  />
+
+                  {/* Content */}
+                  <View className="absolute inset-0 p-5 flex justify-between">
+                    <View>
+                      <Text className="text-white font-primary-bold text-xl">
+                        {trip.from} → {trip.to}
+                      </Text>
+                      <Text className="text-gray-200 font-primary-medium text-sm mt-1">
+                        {trip.description} • 🚀 {formatDistance(trip.distance_km)}
+                      </Text>
+                    </View>
+
+                    <View className="flex-row items-center justify-between pt-3 border-t border-white/10 mt-3">
+                      <View className="flex-row items-center">
+                        <Text className="text-gray-200 font-primary-medium text-base mr-2">
+                          Trip Time:
+                        </Text>
+                        <Text className="text-white font-primary-bold text-base">
+                          {formatDuration(trip.duration)}
+                        </Text>
+                      </View>
+                      <View className="bg-primary px-4 py-1.5 rounded-xl">
+                        <Text className="text-background font-primary-bold text-sm">
+                          Board Now →
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: '#0C0C0D' }}
+        handleIndicatorStyle={{ backgroundColor: '#6B7280' }}
+      >
+        <BottomSheetView style={{ flex: 1, paddingHorizontal: 20 }}>
         {step === 'tasks' ? (
           <>
             <Text className="text-white font-primary-bold text-2xl mb-2">Select Tasks</Text>
@@ -264,57 +358,6 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
               </>
             )}
           </>
-        ) : step === 'planet' ? (
-          <>
-            <TouchableOpacity onPress={() => setStep('tasks')} className="mb-4">
-              <Text className="text-primary font-primary-semibold text-sm">← Back to Tasks</Text>
-            </TouchableOpacity>
-
-            <Text className="text-white font-primary-bold text-2xl mb-2">Choose Your Trip</Text>
-            <Text className="text-gray-400 font-primary-medium text-sm mb-6">
-              Select your journey duration
-            </Text>
-
-            <BottomSheetScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-              {PLANET_TRIPS.map((trip) => (
-                <TouchableOpacity
-                  key={trip.id}
-                  onPress={() => handleSelectTrip(trip)}
-                  className="mb-4 p-5 rounded-3xl"
-                  activeOpacity={0.7}
-                  style={{ backgroundColor: trip.color + '15' }}
-                >
-                  <View className="flex-row items-center justify-between mb-3">
-                    <View className="flex-row items-center">
-
-                      <View>
-                        <Text className="text-white font-primary-bold text-xl">
-                          {trip.from} → {trip.to}
-                        </Text>
-                        <Text className="text-gray-400 font-primary-medium text-sm mt-1">
-                          {trip.description} • 🚀 {formatDistance(trip.distance_km)}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View className="flex-row items-center justify-between pt-3 border-t border-gray-800/50">
-                    <View className="flex-row items-center">
-                      <Text className="text-gray-400 font-primary-medium text-sm mr-2">Trip Time:</Text>
-                      <Text className="text-white font-primary-bold text-lg">
-                        {formatDuration(trip.duration)}
-                      </Text>
-                    </View>
-                    <View className="bg-primary px-4 py-2 rounded-xl">
-                      <Text className="text-background font-primary-bold text-sm">
-                        Board Now →
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </BottomSheetScrollView>
-          </>
         ) : (
           <>
             <TouchableOpacity
@@ -331,9 +374,19 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                 <Text className="text-white font-primary-bold text-2xl mb-2">
                   Choose Session Type
                 </Text>
-                <Text className="text-gray-400 font-primary-medium text-sm mb-6">
+                <Text className="text-gray-400 font-primary-medium text-sm mb-3">
                   How do you want to fly from {selectedTrip.from} to {selectedTrip.to}?
                 </Text>
+
+                {!user?.is_premium && (
+                  <Text className="text-xs font-primary-medium text-secondary mb-5">
+                    {remaining3DTrials === null
+                      ? 'Checking your free 3D sessions...'
+                      : remaining3DTrials > 0
+                      ? `${remaining3DTrials} free 3D session${remaining3DTrials > 1 ? 's' : ''} left`
+                      : 'No free 3D sessions left • 3D requires First Class'}
+                  </Text>
+                )}
 
                 <View className="mb-6 p-4 rounded-2xl bg-card border border-gray-800/60">
                   <Text className="text-white font-primary-semibold text-base mb-1">
@@ -347,7 +400,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                 <View className="flex flex-row w-full justify-between px-2">
                   <TouchableOpacity
                     onPress={() => handleStartWithMode('map')}
-                    className={`py-4 px-4 rounded-xl items-center bg-black `}
+                    className={`py-4 px-4 rounded-xl items-center bg-black`}
                   >
                     <Image
                       source={require('../../assets/images/session-map.png')}
@@ -355,7 +408,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                       contentFit="contain"
                       className='rounded-lg'
                     />
-                    <Text className="text-white font-primary-bold text-2xl mt-2">
+                    <Text className="text-white font-primary-bold text-xl mt-3">
                       2D
                     </Text>
                   </TouchableOpacity>
@@ -364,33 +417,37 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
 
                   <TouchableOpacity
                     onPress={() => handleStartWithMode('3d')}
-                    className={`py-4 px-4 rounded-xl items-center bg-black ${!user?.is_premium && 'border border-secondary'}`}
+                    className={`py-4 px-4 rounded-xl items-center bg-black ${
+                      !user?.is_premium && 'border border-secondary'
+                    }`}
 
                   >
-                    {/* badge on the border named premium */}
-                    {!user?.is_premium && (
-                      <View className=" bg-secondary px-2 py-1 rounded-full mb-2">
-                        <Text className="text-xs text-white font-primary-bold">PREMIUM</Text>
-                      </View>
-                    )}
+                    
                     <Image
                       source={require('../../assets/images/session-3d.png')}
-                      style={{ width: 140, height: 180 }}
+                      style={{ width: 140, height: 180, borderRadius: 8 }}
                       contentFit="fill"
                       className='rounded-lg'
                     />
                     <Text
-                      className="text-white font-primary-bold text-2xl mt-2"
+                      className="text-white font-primary-bold text-xl mt-3"
                     >
                       3D
                     </Text>
+                    {!user?.is_premium && remaining3DTrials !== null && (
+                      <Text className="text-sm font-primary-medium text-gray-400 mt-1">
+                        {remaining3DTrials > 0
+                          && `${remaining3DTrials} free left`}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </>
             )}
           </>
         )}
-      </BottomSheetView>
-    </BottomSheet>
+        </BottomSheetView>
+      </BottomSheet>
+    </>
   );
 }
