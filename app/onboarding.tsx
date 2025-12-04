@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const slides = [
     {
         question: 'Welcome aboard! 👋',
-        description: 'Your journey to deep focus begins here.',
+        description: 'Your journey into deep focus begins here.',
         buttonText: 'Hi!',
     },
     {
