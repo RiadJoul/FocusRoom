@@ -7,12 +7,13 @@ import { supabase, SUPABASE_KEY, SUPABASE_URL } from '@/lib/supabase';
 import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons, SimpleLineIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Purchases from 'react-native-purchases';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { NotificationsBottomSheet } from '@/components/profile/NotificationsBottomSheet';
+import * as StoreReview from 'expo-store-review';
 
 export default function Profile() {
   const user = useUserStore((state) => state.user);
@@ -286,7 +287,7 @@ export default function Profile() {
     </View>
   );
 
- 
+
   return (
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView
@@ -405,11 +406,11 @@ export default function Profile() {
             </View>
           </View>
         </View>
-        
+
 
         {/* Premium Upsell Box */}
         {!user?.is_premium && (
-          <View className="bg-black px-6 py-5 mx-6 mb-6 rounded-2xl border-2 border-secondary/50">
+          <View className="bg-black px-6 py-5 mb-6 rounded-2xl border-2 border-secondary/50">
 
             {/* Badge */}
             <View className="flex-row items-center justify-center mb-4">
@@ -587,28 +588,82 @@ export default function Profile() {
           <Text className="text-lg font-primary-bold text-white mb-4">Actions</Text>
           <TouchableOpacity
             onPress={openNotificationsSheet}
-            className={`bg-card rounded-2xl p-4 mb-3`}
+            className="bg-card rounded-2xl p-4 mb-3"
             activeOpacity={0.7}
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-x-3">
                 <Ionicons name="notifications-outline" size={24} color="white" />
-                <Text className={`font-primary-semibold text-base text-white`}>
+                <Text className="font-primary-semibold text-base text-white">
                   Notifications
                 </Text>
               </View>
-              <View className='flex flex-row gap-x-2 items-center'>
-                <View className={`w-2 h-2 rounded-full ${user?.notification_enabled ? "bg-green-500" : "bg-gray-500"}`}></View>
-                <Text className='text-white font-primary-regular'>{user?.notification_enabled ? "ON" : "OFF"}</Text>
+              <View className="flex flex-row gap-x-2 items-center">
+                <View className={`w-2 h-2 rounded-full ${user?.notification_enabled ? 'bg-green-500' : 'bg-gray-500'}`} />
+                <Text className="text-white font-primary-regular">
+                  {user?.notification_enabled ? 'ON' : 'OFF'}
+                </Text>
               </View>
             </View>
           </TouchableOpacity>
+
 
         </View>
 
         {/* Menu Items */}
         <View className="pb-4">
-          <Text className="text-lg font-primary-bold text-white mb-4">Info</Text>
+          <Text className="text-lg font-primary-bold text-white mb-4">About</Text>
+          <TouchableOpacity
+            onPress={async () => {
+              try {
+                if (Platform.OS === 'ios') {
+                  const lookup = await fetch(
+                    'https://itunes.apple.com/lookup?bundleId=com.anonymous.focusRoom'
+                  ).then((r) => r.json());
+
+                  const appId = lookup?.results?.[0]?.trackId;
+
+                  if (appId) {
+                    const url = `itms-apps://itunes.apple.com/app/id${appId}?action=write-review`;
+                    await Linking.openURL(url);
+                  } else {
+                    Alert.alert(
+                      'Thank you!',
+                      'Please search for "FocusRoom" in the App Store to leave a review.'
+                    );
+                  }
+                } else {
+                  const available = await StoreReview.isAvailableAsync();
+                  if (available) {
+                    await StoreReview.requestReview();
+                  } else {
+                    Alert.alert(
+                      'Thank you!',
+                      'Reviews can be left from your app store page.'
+                    );
+                  }
+                }
+              } catch (err) {
+                console.warn('Store review prompt failed:', err);
+              }
+            }}
+            className="bg-card rounded-2xl p-4 mb-3"
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <FontAwesome5 name="hand-holding-heart" size={24} color="#fb7185" />
+                <View>
+                  <Text className="font-primary-semibold text-base text-white">
+                    Show us some love
+                  </Text>
+                  <Text className="text-gray-400 text-xs font-primary-medium mt-0.5">
+                    Leave a quick review in the App Store.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
           <MenuItem
             icon={<Ionicons name="document-text-outline" size={24} color="white" />}
             title="Privacy Policy"

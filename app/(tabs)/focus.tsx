@@ -254,7 +254,7 @@ export default function FocusTab() {
           <TouchableOpacity
             onPress={handleOpenTaskSelection}
             disabled={incompleteTasks.length === 0}
-            className={`w-full py-4 rounded-2xl items-center ${incompleteTasks.length > 0 ? 'bg-primary' : 'bg-gray-800'
+            className={`w-full py-4 rounded-2xl items-center ${incompleteTasks.length > 0 ? 'bg-white' : 'bg-gray-800'
               }`}
             activeOpacity={0.85}
           >
