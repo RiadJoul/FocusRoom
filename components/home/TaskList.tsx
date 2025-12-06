@@ -1,6 +1,6 @@
 import { TaskList as TaskListType } from '@/lib/stores/listStore';
 import { Task } from '@/lib/stores/taskStore';
-import { formatDueDate } from '@/lib/utils/dateUtils';
+import { formatDueDate, parseLocalDateKey } from '@/lib/utils/dateUtils';
 import { getPriorityColor } from '@/lib/utils/taskUtils';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -230,20 +230,14 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
           style={animatedStyle}
           className={`bg-card rounded-2xl p-4 flex-row items-center`}
         >
-          {/* Checkbox */}
-          <View className={`w-7 h-7 rounded-full border-2 mr-4 items-center justify-center ${
-            task.status === 'completed' ? 'border-primary bg-primary' : 'border-gray-700'
-          }`}>
-            {task.status === 'completed' && (
-              <Text className="text-background font-primary-bold">✓</Text>
-            )}
+          {/* Right arrow for icon */}
+          <View className="mr-4">
+            <Ionicons name="arrow-forward-circle" size={24} color="#9CA3AF" />
           </View>
           
           {/* Task Content */}
           <View className="flex-1">
-            <Text className={`font-primary-semibold text-base leading-tight ${
-              task.status === 'completed' ? 'text-gray-500 line-through' : 'text-white'
-            }`}>
+            <Text className={`font-primary-semibold text-base leading-tight text-white`}>
               {task.title}
             </Text>
             <View className="flex-row items-center mt-2">
@@ -260,7 +254,7 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
               {task.due_date && (
                 <View className="flex-row items-center">
                   <Text className="flex items-center text-xs font-primary-medium text-gray-500">
-                    <Ionicons name='time-outline'/> {formatDueDate(new Date(task.due_date))}
+                    <Ionicons name='time-outline'/> {formatDueDate(parseLocalDateKey(task.due_date))}
                   </Text>
                 </View>
               )}

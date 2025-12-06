@@ -2,7 +2,7 @@
   "expo": {
     "name": "FocusRoom",
     "slug": "FocusRoom",
-    "version": "2.0",
+    "version": "2.2",
     "orientation": "portrait",
     "scheme": "focusroom",
     "userInterfaceStyle": "automatic",
@@ -21,7 +21,9 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio", "remote-notification"],
+        "NSUserNotificationUsageDescription": "FocusRoom sends reminders that help you stay on track with your focus missions."
       }
     },
     "android": {
@@ -52,7 +54,16 @@
         }
       ],
       "expo-font",
-      ["expo-apple-authentication"]
+      ["expo-apple-authentication"],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icons/splash-icon-light.png",
+          "color": "#ffffff",
+          "sounds": [],
+          "mode": "production"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

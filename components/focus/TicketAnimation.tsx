@@ -1,6 +1,6 @@
 import { Task } from '@/lib/stores/taskStore';
 import * as Haptics from 'expo-haptics';
-import React, { use, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Modal, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {

@@ -51,7 +51,6 @@ export async function presentPaywallOnce(
 
       case PAYWALL_RESULT.PURCHASED: {
         const planType = await getPlanTypeFromRevenueCat();
-
         await analytics.track(Events.SUBSCRIPTION_STARTED, {
           user_id: userId,
           plan_type: planType ?? 'unknown',

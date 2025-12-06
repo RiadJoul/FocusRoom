@@ -13,6 +13,7 @@ import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { ListCreateModal } from './ListCreateModal';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
+import { formatLocalDateKey } from '@/lib/utils/dateUtils';
 
 interface RecurringTaskModalProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
@@ -115,10 +116,10 @@ export function RecurringTaskModal({
 
       const target = new Date(today);
       target.setDate(today.getDate() + (minOffset ?? 0));
-      firstDueDate = target.toISOString().split('T')[0];
+      firstDueDate = formatLocalDateKey(target);
     } else {
       // For daily/monthly/yearly we can start from today.
-      firstDueDate = today.toISOString().split('T')[0];
+      firstDueDate = formatLocalDateKey(today);
     }
 
     await addRecurringTask(

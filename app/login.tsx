@@ -1,5 +1,4 @@
 import * as AuthSession from 'expo-auth-session';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useState } from 'react';

@@ -817,41 +817,7 @@ export function Model3DViewer({
     meshRef.current = deskGroup;
     scene.add(deskGroup);
 
-    // Create destination planet (hidden initially)
-    const destinationPlanetGroup = new THREE.Group();
-    const destinationPlanetGeometry = new THREE.SphereGeometry(3, 32, 32);
-    const destinationPlanetMaterial = new THREE.MeshPhongMaterial({
-      color: 0x4A90E2,
-      emissive: 0x2A5080,
-      emissiveIntensity: 0.3,
-      shininess: 30,
-      depthWrite: true,
-      depthTest: true,
-    });
-    const destinationPlanet = new THREE.Mesh(destinationPlanetGeometry, destinationPlanetMaterial);
-    destinationPlanet.renderOrder = 1; // Render after stars
-    destinationPlanetGroup.add(destinationPlanet);
 
-    // Add atmospheric glow to destination planet
-    const glowGeometry = new THREE.SphereGeometry(3.3, 32, 32);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x6AB0FF,
-      transparent: true,
-      opacity: 0.2,
-      side: THREE.BackSide,
-      depthWrite: false,
-      depthTest: true,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.renderOrder = 2; // Render glow after planet
-    destinationPlanetGroup.add(glow);
-
-    // Position far away initially and hide
-    destinationPlanetGroup.position.set(0, 0, -100);
-    destinationPlanetGroup.visible = false;
-    scene.add(destinationPlanetGroup);
-    destinationPlanetRef.current = destinationPlanet;
-    destinationPlanetGroupRef.current = destinationPlanetGroup;
 
     const updateDigit = (segments: THREE.Mesh[], digit: number) => {
       const digitPatterns: boolean[][] = [

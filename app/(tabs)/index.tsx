@@ -16,9 +16,13 @@ import BottomSheet from '@gorhom/bottom-sheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Application from 'expo-application';
+import { NewVersionModal } from '@/components/home/NewVersionModal';
+import * as Localization from 'expo-localization';
+import { supabase } from '@/lib/supabase';
+import { registerForPushNotifications } from '@/lib/hooks/useRegisterForPushNotifications';
+import * as Notifications from 'expo-notifications';
 
 export default function HomeScreen() {
   const user = useUserStore((state) => state.user);
@@ -33,6 +37,7 @@ export default function HomeScreen() {
   const removeList = useListStore((state) => state.removeList);
   const loading = useTaskStore((state) => state.loading);
 
+  // Premium Status and List Creation Limit
   const isPremium = Boolean(user?.is_premium);
   const canCreateMoreLists = isPremium || lists.length < 5;
 
@@ -43,7 +48,9 @@ export default function HomeScreen() {
   // Intro Modal
   const [showIntroModal, setShowIntroModal] = useState(false);
 
-
+  // New version alert modal
+  const [showNewVersionModal, setShowNewVersionModal] = useState(false);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
 
   // Selected Day for Filtering
   const today = useMemo(() => {
@@ -61,7 +68,43 @@ export default function HomeScreen() {
     recurringBottomSheetRef.current?.expand();
   }, []);
 
-  // Check if user has seen intro modal
+  // Sync device info with server
+  useEffect(() => {
+    if (!user) return;
+
+    const syncDeviceInfo = async () => {
+      const updates: Partial<{ timezone: string; push_token: string }> = {};
+
+      const timeZone = Localization.getCalendars()[0]?.timeZone;
+      if (!user.timezone || user.timezone != timeZone) {
+        if (timeZone) updates.timezone = timeZone;
+      }
+
+      // Batch update if there are any changes
+      if (Object.keys(updates).length > 0) {
+        await supabase
+          .from('users')
+          .update(updates)
+          .eq('id', user.id);
+
+        // Update local store with merged data
+        useUserStore.getState().setUser({ ...user, ...updates });
+      }
+
+      // Sync push token independently (doesn't block other updates)
+      const token = await registerForPushNotifications();
+      if (user.push_token != token) {
+        await supabase
+          .from('users')
+          .update({ push_token: token })
+          .eq('id', user.id);
+      }
+    };
+
+    syncDeviceInfo();
+  }, [user]);
+
+  // Check if user has seen intro modal and app version alert
   useEffect(() => {
     const checkIntroSeen = async () => {
       if (user?.id) {
@@ -71,6 +114,24 @@ export default function HomeScreen() {
         }
       }
     };
+
+    // Show app version alert on first load after install/update
+    async function checkForUpdate() {
+      const latest = await fetch(
+        "https://itunes.apple.com/lookup?bundleId=com.anonymous.focusRoom"
+      ).then(r => r.json());
+      const current = Application.nativeApplicationVersion;
+      const latestVersion = latest?.results?.[0]?.version;
+      if (latestVersion && latestVersion !== current) {
+        const hasSeenNewVersionModal = await AsyncStorage.getItem(`hasSeenNewVersionModal_${latestVersion}`);
+        if (!hasSeenNewVersionModal) {
+          setLatestVersion(latestVersion);
+          setShowNewVersionModal(true);
+        }
+      }
+    }
+
+    checkForUpdate();
     checkIntroSeen();
   }, [user?.id]);
 
@@ -78,6 +139,7 @@ export default function HomeScreen() {
   const generateRecurringTasks = useTaskStore((state) => state.generateRecurringTaskOccurrences);
 
   useEffect(() => {
+    clearNotificationBadge();
     if (user?.id) {
       fetchLists(user.id);
       fetchTasks(user.id).then(() => {
@@ -179,9 +241,19 @@ export default function HomeScreen() {
     setShowIntroModal(false);
   }, [user?.id]);
 
+  const handleCloseNewVersionModal = useCallback(async () => {
+    if (latestVersion) {
+      await AsyncStorage.setItem(`hasSeenNewVersionModal_${latestVersion}`, "true");
+    }
+    setShowNewVersionModal(false);
+  }, [latestVersion]);
+
+  async function clearNotificationBadge() {
+    await Notifications.setBadgeCountAsync(0);
+  }
+
 
   return (
-    <GestureHandlerRootView className="flex-1">
       <SafeAreaView className="flex-1 bg-background pt-5">
         <ScrollView
           className="flex-1 px-4"
@@ -244,6 +316,12 @@ export default function HomeScreen() {
           onClose={handleCloseIntroModal}
         />
 
+        <NewVersionModal
+          visible={showNewVersionModal}
+          latestVersion={latestVersion}
+          onClose={handleCloseNewVersionModal}
+        />
+
         {/* Floating Add Button */}
         <FloatingAddButton
           onPress={handleOpenBottomSheet}
@@ -267,10 +345,9 @@ export default function HomeScreen() {
           canCreateMoreLists={canCreateMoreLists}
           onCreateList={handleCreateList}
           onDeleteList={handleDeleteList}
-          onClose={() => {}}
+          onClose={() => { }}
         />
 
       </SafeAreaView>
-    </GestureHandlerRootView>
   );
 }

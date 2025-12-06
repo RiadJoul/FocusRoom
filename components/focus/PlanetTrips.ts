@@ -62,11 +62,24 @@ export const PLANET_TRIPS: PlanetTrip[] = [
   },
 ];
 
+if (__DEV__) {
+  PLANET_TRIPS.unshift({
+    id: 'test-flight',
+    from: 'Earth',
+    to: 'Test planet',
+    duration: 1 * 60, // 1 minutes
+    distance_km: 6_400,
+    color: '#A0AEC0', // soft lunar gray-blue
+    description: 'Quick focus test 🌙',
+    image: require('../../assets/images/session-map.png'),
+  })
+}
+
 
 export const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   if (hours > 0) {
     return `${hours}h${minutes > 0 ? ` ${minutes}min` : ''}`;
   }

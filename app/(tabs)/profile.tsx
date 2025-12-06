@@ -6,12 +6,13 @@ import { useUserStore } from '@/lib/stores/userStore';
 import { supabase, SUPABASE_KEY, SUPABASE_URL } from '@/lib/supabase';
 import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons, SimpleLineIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import RevenueCatUI from 'react-native-purchases-ui';
 import Purchases from 'react-native-purchases';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import BottomSheet from '@gorhom/bottom-sheet';
+import { NotificationsBottomSheet } from '@/components/profile/NotificationsBottomSheet';
 
 export default function Profile() {
   const user = useUserStore((state) => state.user);
@@ -28,6 +29,9 @@ export default function Profile() {
   const [isSavingName, setIsSavingName] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
+  const [isSavingNotificationSettings, setIsSavingNotificationSettings] = useState(false);
+
+  const notificationsSheetRef = useRef<BottomSheet | null>(null);
 
   // Load stats on mount
   useEffect(() => {
@@ -51,6 +55,60 @@ export default function Profile() {
   // Calculate streak (simplified - days with at least one session in last 7 days)
   const dayStreak = stats ? Math.min(7, stats.totalSessions) : 0;
 
+
+  const openNotificationsSheet = () => {
+    notificationsSheetRef.current?.expand();
+  };
+
+  const handleSaveNotificationSettings = async (settings: { enabled: boolean; hour: number; minute: number }) => {
+    if (!user?.id) return;
+
+    const previousEnabled = !!user.notification_enabled;
+    const previousHour = user.notification_hour ?? null;
+    const previousMinute = user.notification_minute ?? null;
+
+    setIsSavingNotificationSettings(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          notification_enabled: settings.enabled,
+          notification_hour: settings.hour,
+          notification_minute: settings.minute,
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // update local user store
+      useUserStore.setState({
+        user: {
+          ...user,
+          notification_enabled: settings.enabled,
+          notification_hour: settings.hour,
+          notification_minute: settings.minute,
+        },
+      });
+
+      // Track notification settings change
+      analytics.track(Events.DAILY_NOTIFICATION_SETTINGS_UPDATED, {
+        user_id: user.id,
+        enabled: settings.enabled,
+        hour: settings.hour,
+        minute: settings.minute,
+        previous_enabled: previousEnabled,
+        previous_hour: previousHour,
+        previous_minute: previousMinute,
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to update notifications');
+      throw e;
+    } finally {
+      setIsSavingNotificationSettings(false);
+    }
+  };
 
 
   const handleUpdateName = async () => {
@@ -199,10 +257,11 @@ export default function Profile() {
   }
 
 
-  const MenuItem = ({ icon, title, onPress, danger = false }: any) => (
+  const MenuItem = ({ icon, title, onPress, danger = false, disabled = false }: any) => (
     <TouchableOpacity
       onPress={onPress}
-      className="bg-card rounded-2xl p-4 mb-3"
+      disabled={disabled}
+      className={`bg-card rounded-2xl p-4 mb-3 ${disabled ? 'opacity-50' : ''}`}
       activeOpacity={0.7}
     >
       <View className="flex-row items-center justify-between">
@@ -218,6 +277,7 @@ export default function Profile() {
     </TouchableOpacity>
   );
 
+
   const StatCard = ({ value, label, icon }: any) => (
     <View className="flex-1 bg-card rounded-2xl p-4 items-center">
       {icon}
@@ -226,22 +286,23 @@ export default function Profile() {
     </View>
   );
 
+ 
   return (
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView
-        className="flex-1"
+        className="flex-1 px-4"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
       >
         {/* Header */}
-        <View className="px-6 pt-6 pb-4">
+        <View className="pt-6 pb-4">
           <Text className="text-3xl font-primary-bold text-white">Profile</Text>
         </View>
 
 
 
         {/* User Info Card */}
-        <View className="px-6 pb-6">
+        <View className="pb-6">
           <View className="bg-card rounded-2xl p-6">
             <View className="flex-row items-center mb-4">
               {/* Avatar */}
@@ -294,7 +355,7 @@ export default function Profile() {
                       </Text>
                       <Ionicons name="pencil" size={16} color="#818CF8" style={{ marginLeft: 8 }} />
                     </TouchableOpacity>
-                    {/* make this view glowing */}
+                    {/* view glowing */}
                     {user?.is_premium && (
                       <View style={{
                         backgroundColor: '#A78BFA',
@@ -344,6 +405,7 @@ export default function Profile() {
             </View>
           </View>
         </View>
+        
 
         {/* Premium Upsell Box */}
         {!user?.is_premium && (
@@ -387,7 +449,7 @@ export default function Profile() {
 
         {/* Focus Stats */}
         {stats && stats.totalSessions > 0 ? (
-          <View className="px-6 pb-6">
+          <View className="pb-6">
             <Text className="text-lg font-primary-bold text-white mb-4">Focus Statistics</Text>
 
             <View className="bg-card rounded-2xl p-4 gap-y-5">
@@ -412,8 +474,8 @@ export default function Profile() {
 
               {/* PREMIUM — Average Session */}
               <TouchableOpacity
-                onPress={() => !user.is_premium && presentPaywall()}
-                className={user.is_premium ? 'opacity-100' : 'opacity-50'}
+                onPress={() => !user?.is_premium && presentPaywall()}
+                className={user?.is_premium ? 'opacity-100' : 'opacity-50'}
               >
                 <View className="flex-row items-center justify-between opacity-100">
                   <View className="flex-row items-center gap-x-2">
@@ -423,7 +485,7 @@ export default function Profile() {
                     </Text>
                   </View>
 
-                  {user.is_premium ? (
+                  {user?.is_premium ? (
                     <Text className="text-white font-primary-bold text-lg">
                       {stats.averageSessionLength}min
                     </Text>
@@ -438,8 +500,8 @@ export default function Profile() {
 
               {/* PREMIUM — Focus Health */}
               <TouchableOpacity
-                onPress={() => !user.is_premium && presentPaywall()}
-                className={user.is_premium ? 'opacity-100' : 'opacity-50'}
+                onPress={() => !user?.is_premium && presentPaywall()}
+                className={user?.is_premium ? 'opacity-100' : 'opacity-50'}
               >
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-x-2">
@@ -449,7 +511,7 @@ export default function Profile() {
                     </Text>
                   </View>
 
-                  {user.is_premium ? (
+                  {user?.is_premium ? (
                     <View className="flex-row items-center">
                       <Text className="text-white font-primary-bold text-lg mr-2">
                         {stats.focusHealthScore}
@@ -479,8 +541,8 @@ export default function Profile() {
 
               {/* PREMIUM — Distance Traveled */}
               <TouchableOpacity
-                onPress={() => !user.is_premium && presentPaywall()}
-                className={user.is_premium ? 'opacity-100' : 'opacity-50'}
+                onPress={() => !user?.is_premium && presentPaywall()}
+                className={user?.is_premium ? 'opacity-100' : 'opacity-50'}
               >
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-x-2">
@@ -490,7 +552,7 @@ export default function Profile() {
                     </Text>
                   </View>
 
-                  {user.is_premium ? (
+                  {user?.is_premium ? (
                     <Text className="text-white font-primary-bold text-lg">
                       {stats.totalDistanceKm >= 1000000
                         ? `${(stats.totalDistanceKm / 1000000).toFixed(1)}M km`
@@ -510,7 +572,7 @@ export default function Profile() {
             </View>
           </View>
         ) : (
-          <View className="px-6 pb-6">
+          <View className="pb-6">
             <Text className="text-lg font-primary-bold text-white mb-4">Focus Statistics</Text>
             <View className="bg-card rounded-2xl p-12 gap-y-5">
               <Text className="text-gray-200 text-lg text-center font-primary-medium">
@@ -520,10 +582,32 @@ export default function Profile() {
           </View>
         )}
 
+        {/* Actions Items */}
+        <View className="pb-4">
+          <Text className="text-lg font-primary-bold text-white mb-4">Actions</Text>
+          <TouchableOpacity
+            onPress={openNotificationsSheet}
+            className={`bg-card rounded-2xl p-4 mb-3`}
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <Ionicons name="notifications-outline" size={24} color="white" />
+                <Text className={`font-primary-semibold text-base text-white`}>
+                  Notifications
+                </Text>
+              </View>
+              <View className='flex flex-row gap-x-2 items-center'>
+                <View className={`w-2 h-2 rounded-full ${user?.notification_enabled ? "bg-green-500" : "bg-gray-500"}`}></View>
+                <Text className='text-white font-primary-regular'>{user?.notification_enabled ? "ON" : "OFF"}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
 
+        </View>
 
         {/* Menu Items */}
-        <View className="px-6 pb-4">
+        <View className="pb-4">
           <Text className="text-lg font-primary-bold text-white mb-4">Info</Text>
           <MenuItem
             icon={<Ionicons name="document-text-outline" size={24} color="white" />}
@@ -563,8 +647,8 @@ export default function Profile() {
             }}
           />
         </View>
-        {/* Menu Items */}
-        <View className="px-6 pb-4">
+        {/* Danger zone */}
+        <View className="pb-4">
           <Text className="text-lg font-primary-bold text-red-300 mb-4">Danger zone</Text>
           {
             isDeletingAccount ? (
@@ -583,7 +667,7 @@ export default function Profile() {
         </View>
 
         {/* Sign Out Button */}
-        <View className="px-6 pt-2">
+        <View className="pt-2">
           <TouchableOpacity
             onPress={handleSignOut}
             className="bg-red-500/10 border border-red-500/30 py-5 rounded-2xl items-center"
@@ -602,6 +686,15 @@ export default function Profile() {
           </Text>
         </View>
       </ScrollView>
+
+      <NotificationsBottomSheet
+        isNotificationEnabled={!!user?.notification_enabled}
+        initialHour={user?.notification_hour ?? 10}
+        initialMinute={user?.notification_minute ?? 0}
+        bottomSheetRef={notificationsSheetRef}
+        onSave={handleSaveNotificationSettings}
+        isSaving={isSavingNotificationSettings}
+      />
 
     </SafeAreaView>
   );

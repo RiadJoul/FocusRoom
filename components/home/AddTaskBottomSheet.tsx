@@ -1,10 +1,10 @@
 import { TaskList } from '@/lib/stores/listStore';
-import { formatDueDate, getFutureDates } from '@/lib/utils/dateUtils';
+import { formatDueDate, formatLocalDateKey, getFutureDates } from '@/lib/utils/dateUtils';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Keyboard, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Keyboard, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { ListCreateModal } from './ListCreateModal';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
@@ -96,7 +96,7 @@ export function AddTaskBottomSheet({
   const handleAddTask = async () => {
     if (!taskTitle.trim() || !selectedListId || !selectedDueDate) return;
 
-    const dueDateStr = selectedDueDate.toISOString().split('T')[0];
+    const dueDateStr = formatLocalDateKey(selectedDueDate);
 
     await onAddTask(taskTitle.trim(), selectedPriority, selectedListId, dueDateStr);
     handleCloseBottomSheet();
