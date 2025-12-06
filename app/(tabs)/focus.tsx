@@ -1,4 +1,3 @@
-import DailyMotivation from '@/components/focus/DailyMotivation';
 import { FocusSessionScreen } from '@/components/focus/FocusSessionScreen';
 import { PlanetTrip } from '@/components/focus/PlanetTrips';
 import { TaskSelectionModal } from '@/components/focus/TaskSelectionModal';
@@ -9,13 +8,15 @@ import { Task, useTaskStore } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
 import { getIncompleteTasks } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as StoreReview from 'expo-store-review';
+import SpaceStation from '@/components/focus/SpaceStation';
+import { BlurView } from 'expo-blur';
+import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 
 export default function FocusTab() {
   const navigation = useNavigation();
@@ -103,9 +104,10 @@ export default function FocusTab() {
         [Properties.DURATION_MINUTES]: Math.floor(selectedTrip.duration / 60),
         [Properties.DISTANCE_KM]: selectedTrip.distance_km,
         [Properties.TASKS_COUNT]: selectedTasks.length,
+        session_type: sessionType === '3d' ? 'first_class' : 'economy',
       });
     }
-  }, [selectedTrip, selectedTasks]);
+  }, [selectedTrip, selectedTasks, sessionType]);
 
   const handleEndSession = useCallback(
     async (duration: number, completedTaskIds: string[]) => {
@@ -119,11 +121,13 @@ export default function FocusTab() {
         analytics.track(Events.SESSION_COMPLETED, {
           [Properties.TRIP_ID]: selectedTrip.id,
           [Properties.TRIP_NAME]: `${selectedTrip.from} → ${selectedTrip.to}`,
+          [Properties.SESSION_STATUS]: 'completed',
           [Properties.DURATION_SECONDS]: duration,
           [Properties.DURATION_MINUTES]: Math.floor(duration / 60),
           [Properties.DISTANCE_KM]: selectedTrip.distance_km,
           [Properties.TASKS_COMPLETED]: completedTaskIds.length,
           [Properties.TASKS_COUNT]: selectedTasks.length,
+          session_type: sessionType === '3d' ? 'first_class' : 'economy',
           completed_percentage: Math.round(
             (completedTaskIds.length / selectedTasks.length) * 100
           ),
@@ -170,7 +174,7 @@ export default function FocusTab() {
       setSelectedTrip(null);
       setSessionStartTime(null);
     },
-    [user?.id, selectedTrip, sessionStartTime, createSession, selectedTasks, stats]
+    [user?.id, selectedTrip, sessionStartTime, createSession, selectedTasks, stats, sessionType]
   );
 
   const handleMarkTasksComplete = useCallback(async (taskIds: string[]) => {
@@ -178,6 +182,13 @@ export default function FocusTab() {
       await toggleComplete(taskId);
     }
   }, [toggleComplete]);
+
+  const handleOpenPremiumSpaceStation = useCallback(async () => {
+    await presentPaywallOnce({
+      userId: user?.id,
+      source: 'focus_tab_space_station',
+    });
+  }, [user?.id]);
 
   if (sessionActive && selectedTrip) {
     return (
@@ -192,74 +203,176 @@ export default function FocusTab() {
   }
 
   return (
-    <GestureHandlerRootView className="flex-1">
-      <SafeAreaView className="flex-1 bg-background">
-        <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View className="pt-6 pb-8">
-            <View className='flex flex-row items-center'>
+    <SafeAreaView className="flex-1 bg-background">
+      <ScrollView
+        className="flex-1 px-4"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 32 }}
+      >
+        {/* Header */}
+        <View className="pt-6 pb-4">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center">
               <Image
                 source={require('../../assets/icons/ios-light.png')}
-                className="w-12 h-12 mr-5 mb-2 rounded-lg"
+                className="w-11 h-11 mr-4 rounded-2xl"
               />
-              <Text className="text-white font-primary-bold text-3xl">
-                FocusRoom
+              <View>
+                <Text className="text-gray-400 font-primary-medium text-xs uppercase tracking-[0.16em]">
+                  Focus Mission Control
+                </Text>
+                
+              </View>
+            </View>
+          </View>
+
+          <Text className="text-gray-400 font-primary-medium text-sm mt-3">
+            Lock in and start your focus.
+          </Text>
+        </View>
+
+        {/* Main Focus Card */}
+        <View className="bg-card rounded-3xl px-5 py-6 mb-2 border border-white/5">
+          <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-1 pr-3">
+              <Text className="text-gray-400 font-primary-medium text-xs uppercase tracking-[0.18em] mb-1">
+                Next Mission
+              </Text>
+              <Text className="text-white font-primary-bold text-xl">
+                Ready to focus?
               </Text>
             </View>
-
-            <Text className="text-gray-300 font-primary-medium text-base">
-              Lock in and crush your tasks
-            </Text>
+            <View className="bg-primary/20 border border-primary/40 rounded-full px-3 py-1">
+              <Text className="text-primary font-primary-semibold text-xs uppercase tracking-wider">
+                {incompleteTasks.length > 0
+                  ? `${incompleteTasks.length} task${incompleteTasks.length > 1 ? 's' : ''}`
+                  : 'No tasks'}
+              </Text>
+            </View>
           </View>
 
-          <DailyMotivation stats={stats} />
-
-
-          {/* Main Focus Card */}
-          <View className="bg-card rounded-2xl p-8 mb-6 mt-4 items-center">
-            <Text className="text-white font-primary-bold text-2xl mb-3 text-center">
-              Ready to Focus?
-            </Text>
-
-            <TouchableOpacity
-              onPress={handleOpenTaskSelection}
-              disabled={incompleteTasks.length === 0}
-              className={`py-4 px-8 rounded-xl ${incompleteTasks.length > 0 ? 'bg-primary' : 'bg-gray-800'
+          <TouchableOpacity
+            onPress={handleOpenTaskSelection}
+            disabled={incompleteTasks.length === 0}
+            className={`w-full py-4 rounded-2xl items-center ${incompleteTasks.length > 0 ? 'bg-primary' : 'bg-gray-800'
+              }`}
+            activeOpacity={0.85}
+          >
+            <Text
+              className={`font-primary-bold text-base ${incompleteTasks.length > 0 ? 'text-background' : 'text-gray-600'
                 }`}
-              activeOpacity={0.8}
             >
-              <Text
-                className={`font-primary-bold text-lg ${incompleteTasks.length > 0 ? 'text-background' : 'text-gray-600'
-                  }`}
-              >
-                Start Focus Session
+              {incompleteTasks.length > 0 ? 'Start Focus Session' : 'Add a task to begin'}
+            </Text>
+          </TouchableOpacity>
+
+          {incompleteTasks.length === 0 && (
+            <Text className="text-gray-500 font-primary-medium text-xs mt-3 text-center">
+              You’re all clear. Add a task to schedule your next focus trip.
+            </Text>
+          )}
+        </View>
+
+        {/* <DailyMotivation stats={stats} /> */}
+
+        {/* Quick stats */}
+        {stats && (
+          <View className="mb-2 flex-row gap-3">
+            <View className="flex-1 bg-card/80 border border-white/5 rounded-2xl px-4 py-3">
+              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.18em] mb-1">
+                Focus Time
               </Text>
-            </TouchableOpacity>
-            {incompleteTasks.length === 0 && (
-              <Text className="text-gray-500 font-primary-medium text-sm mt-4 text-center">
-                Add some tasks first to start a focus session
+              <Text className="text-white font-primary-bold text-lg">
+                {stats.totalMinutes} min
               </Text>
+              <Text className="text-gray-500 font-primary-medium text-xs mt-1">
+                All sessions
+              </Text>
+            </View>
+            <View className="flex-1 bg-card/80 border border-white/5 rounded-2xl px-4 py-3">
+              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.18em] mb-1">
+                Completed Trips
+              </Text>
+              <Text className="text-white font-primary-bold text-lg">
+                {stats.totalSessions}
+              </Text>
+              <Text className="text-gray-500 font-primary-medium text-xs mt-1">
+                Lifetime
+              </Text>
+            </View>
+          </View>
+        )}
+
+
+
+        {/* Gamified ship card */}
+        <View className="bg-card rounded-3xl px-4 py-5 mb-6 border border-white/5">
+          <View className="flex-row items-center justify-between mb-3 px-1">
+            <View>
+              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.18em]">
+                Ship Upgrades
+              </Text>
+              <Text className="text-white font-primary-semibold text-base mt-1">
+                Space Station
+              </Text>
+            </View>
+            {!user?.is_premium && (
+              <View className="bg-primary/20 border border-primary/40 rounded-full px-2.5 py-1">
+                <Text className="text-primary font-primary-semibold text-[10px] uppercase tracking-[0.16em]">
+                  Premium
+                </Text>
+              </View>
             )}
           </View>
-        </ScrollView>
 
-        {/* Task Selection Bottom Sheet */}
-        <TaskSelectionModal
-          bottomSheetRef={bottomSheetRef}
-          tasks={incompleteTasks}
-          onStartSession={handleStartSession}
+          <View className="relative mt-1">
+            <SpaceStation />
+
+            {!user?.is_premium && (
+              <BlurView
+                intensity={40}
+                tint="dark"
+                style={StyleSheet.absoluteFillObject}
+              >
+                <View className="flex-1 items-center justify-center px-6">
+                  <Text className="text-white font-primary-semibold text-sm text-center mb-2">
+                    Upgrade to unlock your evolving spaceship.
+                  </Text>
+                  <Text className="text-gray-300 font-primary-medium text-xs text-center mb-3">
+                    Your focus sessions will power up this ship with new parts and effects.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={handleOpenPremiumSpaceStation}
+                    className="px-4 py-2 rounded-full bg-primary"
+                    activeOpacity={0.85}
+                  >
+                    <Text className="text-background font-primary-bold text-xs uppercase tracking-[0.16em]">
+                      Unlock First Class
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </BlurView>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Task Selection Bottom Sheet */}
+      <TaskSelectionModal
+        bottomSheetRef={bottomSheetRef}
+        tasks={incompleteTasks}
+        onStartSession={handleStartSession}
+      />
+
+      {/* Ticket Animation */}
+      {showTicket && selectedTrip && (
+        <TicketAnimation
+          visible={showTicket}
+          trip={selectedTrip}
+          tasks={selectedTasks}
+          onAnimationComplete={handleTicketAnimationComplete}
         />
-
-        {/* Ticket Animation */}
-        {showTicket && selectedTrip && (
-          <TicketAnimation
-            visible={showTicket}
-            trip={selectedTrip}
-            tasks={selectedTasks}
-            onAnimationComplete={handleTicketAnimationComplete}
-          />
-        )}
-      </SafeAreaView>
-    </GestureHandlerRootView>
+      )}
+    </SafeAreaView>
   );
 }

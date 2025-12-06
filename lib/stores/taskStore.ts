@@ -62,6 +62,7 @@ export const useTaskStore = create<TaskState>()(
             .from('tasks')
             .select('*')
             .eq('user_id', userId)
+            .eq('status','pending')
             .order('created_at', { ascending: false });
           if (error) throw error;
           set({ tasks: data || [], loading: false });
@@ -106,6 +107,61 @@ export const useTaskStore = create<TaskState>()(
           return data;
         } catch (error) {
           console.error('Error adding task:', error);
+          return null;
+        }
+      },
+
+      addRecurringTask: async (
+        listId: string,
+        title: string,
+        recurrenceType: RecurrenceType,
+        recurrenceDays?: number[],
+        priority?: 'low' | 'medium' | 'high',
+        dueDate?: string | null,
+        interval?: number,
+        endDate?: string | null
+      ) => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('No user');
+          
+          const newTask = {
+            user_id: user.id,
+            list_id: listId,
+            title,
+            priority: priority || 'medium',
+            due_date: dueDate || null,
+            status: 'pending' as const,
+            is_recurring: true,
+            recurrence_type: recurrenceType,
+            recurrence_interval: interval || 1,
+            recurrence_days: recurrenceDays || null,
+            recurrence_end_date: endDate || null,
+          };
+          
+          const { data, error } = await supabase
+            .from('tasks')
+            .insert([newTask])
+            .select()
+            .single();
+          
+          if (error) throw error;
+          
+          // Track recurring task creation
+          analytics.track(Events.TASK_CREATED, {
+            [Properties.TASK_ID]: data.id,
+            [Properties.TASK_PRIORITY]: data.priority,
+            has_due_date: !!data.due_date,
+            is_recurring: true,
+            recurrence_type: recurrenceType,
+          });
+          
+          analytics.incrementProperty('total_tasks_created', 1);
+          
+          set({ tasks: [...get().tasks, data] });
+          return data;
+        } catch (error) {
+          console.error('Error adding recurring task:', error);
           return null;
         }
       },
@@ -170,60 +226,7 @@ export const useTaskStore = create<TaskState>()(
         await get().updateTask(id, { status: newStatus });
       },
       
-      addRecurringTask: async (
-        listId: string,
-        title: string,
-        recurrenceType: RecurrenceType,
-        recurrenceDays?: number[],
-        priority?: 'low' | 'medium' | 'high',
-        dueDate?: string | null,
-        interval?: number,
-        endDate?: string | null
-      ) => {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) throw new Error('No user');
-          
-          const newTask = {
-            user_id: user.id,
-            list_id: listId,
-            title,
-            priority: priority || 'medium',
-            due_date: dueDate || null,
-            status: 'pending' as const,
-            is_recurring: true,
-            recurrence_type: recurrenceType,
-            recurrence_interval: interval || 1,
-            recurrence_days: recurrenceDays || null,
-            recurrence_end_date: endDate || null,
-          };
-          
-          const { data, error } = await supabase
-            .from('tasks')
-            .insert([newTask])
-            .select()
-            .single();
-          
-          if (error) throw error;
-          
-          // Track recurring task creation
-          analytics.track(Events.TASK_CREATED, {
-            [Properties.TASK_ID]: data.id,
-            [Properties.TASK_PRIORITY]: data.priority,
-            has_due_date: !!data.due_date,
-            is_recurring: true,
-            recurrence_type: recurrenceType,
-          });
-          
-          analytics.incrementProperty('total_tasks_created', 1);
-          
-          set({ tasks: [...get().tasks, data] });
-          return data;
-        } catch (error) {
-          console.error('Error adding recurring task:', error);
-          return null;
-        }
-      },
+      
       
       generateRecurringTaskOccurrences: async () => {
         try {

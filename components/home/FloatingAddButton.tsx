@@ -1,11 +1,9 @@
-import { analytics, Events } from '@/lib/analytics';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { useUserStore } from '@/lib/stores/userStore';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
   
 
@@ -52,7 +50,7 @@ export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonPro
     try {
       return await presentPaywallOnce({
         userId: user?.id,
-        source: 'floating_recurring_button',
+        source: 'Recurring List Task Button',
       });
     } finally {
       setIsPresentingPaywall(false);

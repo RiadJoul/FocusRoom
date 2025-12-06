@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Easing, View } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export function SpaceMapViewer() {
   const { width, height } = Dimensions.get('window');
@@ -60,10 +60,6 @@ export function SpaceMapViewer() {
     };
   }, [travelAnim]);
 
-  const planetRotationInterpolate = planetRotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
 
   // Generate stars across the entire map once
   if (!starPositionsRef.current) {

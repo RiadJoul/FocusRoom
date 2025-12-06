@@ -24,6 +24,32 @@ export function getWeekDates() {
 }
 
 /**
+ * Format a Date into a local YYYY-MM-DD string (no timezone conversion).
+ * This is used for storing due_date in Supabase in a timezone-safe way.
+ */
+export function formatLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Parse a YYYY-MM-DD string into a Date at local midnight.
+ * This avoids JS treating date-only strings as UTC.
+ */
+export function parseLocalDateKey(value: string): Date {
+  const [yearStr, monthStr, dayStr] = value.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const date = new Date();
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+/**
  * Check if two dates are the same day (ignoring time)
  */
 export function isSameDay(date1: Date, date2: Date): boolean {

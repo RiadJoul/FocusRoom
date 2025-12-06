@@ -3,7 +3,7 @@
  */
 
 import { Task } from '../stores/taskStore';
-import { isSameDay } from './dateUtils';
+import { isSameDay, parseLocalDateKey } from './dateUtils';
 
 /**
  * Get priority border and background color classes
@@ -40,7 +40,7 @@ export function getTasksForDay(tasks: Task[], selectedDay: Date, today: Date): T
       return isSameDay(selectedDay, today);
     }
     
-    const taskDueDate = new Date(t.due_date);
+    const taskDueDate = parseLocalDateKey(t.due_date);
     return isSameDay(taskDueDate, selectedDay);
   });
 }

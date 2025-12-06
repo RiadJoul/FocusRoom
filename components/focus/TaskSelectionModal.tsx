@@ -1,15 +1,15 @@
 import { Task } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
-import { analytics, Events } from '@/lib/analytics';
-import { formatDueDate } from '@/lib/utils/dateUtils';
+import { formatDueDate, parseLocalDateKey } from '@/lib/utils/dateUtils';
 import { getPriorityColor } from '@/lib/utils/taskUtils';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import type BottomSheet from '@gorhom/bottom-sheet';
+import React, { useState, useEffect, useRef } from 'react';
+import { Modal, ScrollView, Text, TouchableOpacity, View, TouchableWithoutFeedback } from 'react-native';
 import { Image } from 'expo-image';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { PLANET_TRIPS, PlanetTrip, formatDistance, formatDuration } from './PlanetTrips';
+import { Ionicons } from '@expo/vector-icons';
+import { Video, ResizeMode } from 'expo-av';
 
 interface TaskSelectionModalProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
@@ -23,23 +23,8 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
   const [step, setStep] = useState<'tasks' | 'planet' | 'mode'>('tasks');
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
-  const [remaining3DTrials, setRemaining3DTrials] = useState<number | null>(null);
-  const snapPoints = useMemo(() => ['75%', '90%'], []);
-
-  useEffect(() => {
-    const loadTrials = async () => {
-      try {
-        const storageKey = `free_3d_sessions_${user?.id || 'guest'}`;
-        const stored = await AsyncStorage.getItem(storageKey);
-        const used = stored ? parseInt(stored, 10) || 0 : 0;
-        setRemaining3DTrials(Math.max(0, 2 - used));
-      } catch {
-        setRemaining3DTrials(null);
-      }
-    };
-
-    loadTrials();
-  }, [user?.id]);
+  const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
+  const cinematicVideoRef = useRef<Video | null>(null);
 
   const handleToggleTask = (taskId: string) => {
     setSelectedTaskIds(prev => {
@@ -59,8 +44,6 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
   const handleNext = () => {
     if (selectedTaskIds.size > 0) {
       setStep('planet');
-      // Ensure the sheet is fully expanded so all trips are visible
-      bottomSheetRef.current?.snapToIndex(1);
     }
   };
 
@@ -73,7 +56,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     setSelectedTaskIds(new Set());
     setStep('tasks');
     setSelectedTrip(null);
-    bottomSheetRef.current?.close();
+    setIsTaskModalVisible(false);
   };
 
   async function presentPaywall(): Promise<boolean> {
@@ -83,7 +66,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     try {
       return await presentPaywallOnce({
         userId: user?.id,
-        source: 'task_selection_modal',
+        source: 'Trip Type Selection Modal',
       });
     } finally {
       setIsPresentingPaywall(false);
@@ -96,28 +79,10 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     if (selectedTasks.length === 0) return;
 
     if (mode === '3d' && !user?.is_premium) {
-      try {
-        const storageKey = `free_3d_sessions_${user?.id || 'guest'}`;
-        const stored = await AsyncStorage.getItem(storageKey);
-        const used = stored ? parseInt(stored, 10) || 0 : 0;
-
-        if (used < 2) {
-          const nextUsed = used + 1;
-          await AsyncStorage.setItem(storageKey, String(nextUsed));
-          setRemaining3DTrials(Math.max(0, 2 - nextUsed));
-        } else {
-          const unlocked = await presentPaywall();
-          // If purchase not completed/restored, do not start 3D session
-          if (!unlocked && !useUserStore.getState().user?.is_premium) {
-            return;
-          }
-        }
-      } catch (err) {
-        console.error('3D free sessions tracking error:', err);
-        const unlocked = await presentPaywall();
-        if (!unlocked && !useUserStore.getState().user?.is_premium) {
-          return;
-        }
+      const unlocked = await presentPaywall();
+      // If purchase not completed/restored, do not start 3D session
+      if (!unlocked && !useUserStore.getState().user?.is_premium) {
+        return;
       }
     }
 
@@ -125,32 +90,52 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     setSelectedTaskIds(new Set());
     setStep('tasks');
     setSelectedTrip(null);
-    bottomSheetRef.current?.close();
+    setIsTaskModalVisible(false);
   };
-
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-      />
-    ),
-    []
-  );
 
   //today
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Filter only incomplete tasks and tasks due today
-  const tasksToShow = tasks.filter(
-    (task) =>
-      task.status !== 'completed' &&
-      (!task.due_date ||
-        new Date(task.due_date).setHours(0, 0, 0, 0) === today.getTime())
-  );
+  // Filter only incomplete tasks and tasks due today (using local date parsing)
+  const tasksToShow = tasks.filter((task) => {
+    if (task.status === 'completed') return false;
+    if (!task.due_date) return true;
+
+    const taskDate = parseLocalDateKey(task.due_date);
+    return taskDate.getTime() === today.getTime();
+  });
+
+  useEffect(() => {
+    if (!bottomSheetRef) return;
+
+    (bottomSheetRef as any).current = {
+      expand: () => {
+        setIsTaskModalVisible(true);
+        setStep('tasks');
+      },
+      close: () => {
+        setSelectedTaskIds(new Set());
+        setStep('tasks');
+        setSelectedTrip(null);
+        setIsTaskModalVisible(false);
+      },
+      snapToIndex: () => {
+        // No-op for modal; kept for compatibility
+      },
+    };
+
+    return () => {
+      (bottomSheetRef as any).current = null;
+    };
+  }, [bottomSheetRef]);
+
+  // Ensure the 3D preview video auto-plays and loops while on the mode step
+  useEffect(() => {
+    if (step === 'mode' && isTaskModalVisible && cinematicVideoRef.current) {
+      cinematicVideoRef.current.playAsync().catch(() => { });
+    }
+  }, [step, isTaskModalVisible]);
 
   return (
     <>
@@ -184,7 +169,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                 key={trip.id}
                 onPress={() => handleSelectTrip(trip)}
                 className="mb-4 rounded-3xl overflow-hidden"
-                
+
               >
                 <View className="relative">
                   {/* Background image */}
@@ -236,218 +221,267 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
         </View>
       </Modal>
 
-      <BottomSheet
-        ref={bottomSheetRef}
-        index={-1}
-        snapPoints={snapPoints}
-        enablePanDownToClose
-        backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: '#0C0C0D' }}
-        handleIndicatorStyle={{ backgroundColor: '#6B7280' }}
+      <Modal
+        visible={isTaskModalVisible && step !== 'planet'}
+        animationType="slide"
+        transparent
+        presentationStyle="fullScreen"
+        onRequestClose={handleClose}
       >
-        <BottomSheetView style={{ flex: 1, paddingHorizontal: 20 }}>
-        {step === 'tasks' ? (
-          <>
-            <Text className="text-white font-primary-bold text-2xl mb-2">Select Tasks</Text>
-            <Text className="text-gray-400 font-primary-medium text-sm mb-6">
-              Choose up to 3 tasks to focus on ({selectedTaskIds.size}/3 selected)
-            </Text>
+        <TouchableWithoutFeedback onPress={handleClose}>
+          <View className="flex-1 justify-end bg-black/50">
+            <TouchableWithoutFeedback>
+              <View className="bg-background rounded-t-3xl px-5 pt-4 pb-2 min-h-[70%]">
+                {step === 'tasks' ? (
+                  <>
+                    <Text className="text-white font-primary-bold text-2xl mb-2">Select Tasks</Text>
+                    <Text className="text-gray-400 font-primary-medium text-sm mb-6">
+                      Choose up to 3 tasks to focus on ({selectedTaskIds.size}/3 selected)
+                    </Text>
 
-            {tasksToShow.length === 0 ? (
-              <View className="flex-1 items-center justify-center">
-                <Text className="text-gray-500 font-primary-medium text-center">
-                  No tasks available. Add some tasks first!
-                </Text>
-              </View>
-            ) : (
-              <>
-                <BottomSheetScrollView
-                  showsVerticalScrollIndicator={false}
-                  style={{ flex: 1, marginBottom: 20 }}
-                >
-                  {tasksToShow.map((task) => {
-                    const isSelected = selectedTaskIds.has(task.id);
-                    const canSelect = selectedTaskIds.size < 3 || isSelected;
+                    {tasksToShow.length === 0 ? (
+                      <View className="flex-1 items-center justify-center">
+                        <Text className="text-gray-500 font-primary-medium text-center">
+                          No tasks available. Add some tasks first!
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <ScrollView
+                          showsVerticalScrollIndicator={false}
+                          style={{ marginBottom: 20 }}
+                        >
+                          {tasksToShow.map((task) => {
+                            const isSelected = selectedTaskIds.has(task.id);
+                            const canSelect = selectedTaskIds.size < 3 || isSelected;
 
-                    return (
-                      <TouchableOpacity
-                        key={task.id}
-                        onPress={() => handleToggleTask(task.id)}
-                        disabled={!canSelect && !isSelected}
-                        className={`mb-3 p-4 rounded-2xl border ${isSelected
-                          ? 'bg-primary/10 border-primary'
-                          : canSelect
-                            ? 'bg-card border-gray-800'
-                            : 'bg-card-dark border-gray-800/50'
-                          }`}
-                        activeOpacity={0.7}
-                      >
-                        <View className="flex-row items-center">
-                          {/* Checkbox */}
-                          <View
-                            className={`w-6 h-6 rounded-full border-2 mr-3 items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-700'
-                              }`}
+                            return (
+                              <TouchableOpacity
+                                key={task.id}
+                                onPress={() => handleToggleTask(task.id)}
+                                disabled={!canSelect && !isSelected}
+                                className={`mb-3 p-4 rounded-2xl border ${isSelected
+                                  ? 'bg-primary/10 border-primary'
+                                  : canSelect
+                                    ? 'bg-card border-gray-800'
+                                    : 'bg-card-dark border-gray-800/50'
+                                  }`}
+                                activeOpacity={0.7}
+                              >
+                                <View className="flex-row items-center">
+                                  {/* Checkbox */}
+                                  <View
+                                    className={`w-6 h-6 rounded-full border-2 mr-3 items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-700'
+                                      }`}
+                                  >
+                                    {isSelected && (
+                                      <Text className="text-background font-primary-bold text-sm">✓</Text>
+                                    )}
+                                  </View>
+
+                                  {/* Task Content */}
+                                  <View className="flex-1">
+                                    <Text
+                                      className={`font-primary-semibold text-base leading-tight ${canSelect ? 'text-white' : 'text-gray-600'
+                                        }`}
+                                    >
+                                      {task.title}
+                                    </Text>
+                                    <View className="flex-row items-center mt-2">
+                                      {/* Priority Badge */}
+                                      <View className={`flex-row items-center px-2 py-1 rounded-md ${getPriorityColor(task.priority)}`}>
+                                        <Text
+                                          className="text-xs font-primary-medium capitalize"
+                                          style={{
+                                            color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
+                                          }}
+                                        >
+                                          {task.priority}
+                                        </Text>
+                                      </View>
+
+                                      {/* Due Date */}
+                                      {task.due_date && (
+                                        <View className="flex-row items-center">
+                                          <Text className="flex items-center text-xs font-primary-medium text-gray-500">
+                                            <Ionicons name='time-outline' /> {formatDueDate(new Date(task.due_date))}
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+
+                        {/* Action Buttons */}
+                        <View className="flex-row gap-3 pb-4">
+                          <TouchableOpacity
+                            onPress={handleClose}
+                            className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
+                            activeOpacity={0.8}
                           >
-                            {isSelected && (
-                              <Text className="text-background font-primary-bold text-sm">✓</Text>
-                            )}
-                          </View>
+                            <Text className="text-gray-400 font-primary-semibold text-base">Cancel</Text>
+                          </TouchableOpacity>
 
-                          {/* Task Content */}
-                          <View className="flex-1">
+                          <TouchableOpacity
+                            onPress={handleNext}
+                            disabled={selectedTaskIds.size === 0}
+                            className={`flex-1 py-4 rounded-xl items-center ${selectedTaskIds.size > 0 ? 'bg-primary' : 'bg-gray-800'
+                              }`}
+                            activeOpacity={0.8}
+                          >
                             <Text
-                              className={`font-primary-semibold text-base leading-tight ${canSelect ? 'text-white' : 'text-gray-600'
+                              className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
                                 }`}
                             >
-                              {task.title}
+                              Next: Choose Trip
                             </Text>
-                            <View className="flex-row items-center mt-2">
-                              {/* Priority Badge */}
-                              <View className={`flex-row items-center px-2 py-1 rounded-md ${getPriorityColor(task.priority)}`}>
-                                <Text
-                                  className="text-xs font-primary-medium capitalize"
-                                  style={{
-                                    color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
-                                  }}
-                                >
-                                  {task.priority}
-                                </Text>
-                              </View>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => setStep('planet')}
+                      className="mb-4"
+                    >
+                      <Text className="text-primary font-primary-semibold text-sm">
+                        ← Back to Trips
+                      </Text>
+                    </TouchableOpacity>
 
-                              {/* Due Date */}
-                              {task.due_date && (
-                                <View className="flex-row items-center ml-2">
-                                  <Text className="text-xs font-primary-medium text-gray-500">
-                                    🕒 {formatDueDate(new Date(task.due_date))}
-                                  </Text>
-                                </View>
-                              )}
+                    {selectedTrip && (
+                      <>
+                        <Text className="text-xs tracking-[2px] text-primary font-primary-semibold uppercase mb-1">
+                          Flight Mode
+                        </Text>
+                        <Text className="text-white font-primary-bold text-2xl mb-1">
+                          Choose your cockpit view
+                        </Text>
+                        <Text className="text-gray-400 font-primary-medium text-sm mb-4">
+                          How do you want to fly from {selectedTrip.from} to {selectedTrip.to} today?
+                        </Text>
+
+                        <View className="mb-6 p-4 rounded-2xl bg-card border border-gray-800/60">
+                          <View className="flex-row items-center justify-between mb-3">
+                            <View>
+                              <Text className="text-white font-primary-semibold text-base mb-1">
+                                {selectedTrip.from} → {selectedTrip.to}
+                              </Text>
+                              <Text className="text-gray-400 font-primary-medium text-xs">
+                                {selectedTrip.description}
+                              </Text>
+                            </View>
+                            <View className="ml-3 rounded-full bg-primary/15 px-3 py-1">
+                              <Text className="text-primary font-primary-semibold text-xs">
+                                {formatDistance(selectedTrip.distance_km)}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View className="flex-row gap-2">
+                            <View className="flex-row items-center rounded-full bg-gray-900/80 px-2.5 py-1">
+                              <Ionicons name="time-outline" size={14} color="#9ca3af" />
+                              <Text className="text-gray-300 font-primary-medium text-xs ml-1.5">
+                                {formatDuration(selectedTrip.duration)}
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center rounded-full bg-gray-900/80 px-2.5 py-1">
+                              <Ionicons name="sparkles-outline" size={14} color="#a855f7" />
                             </View>
                           </View>
                         </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </BottomSheetScrollView>
 
-                {/* Action Buttons */}
-                <View className="flex-row gap-3 pb-4">
-                  <TouchableOpacity
-                    onPress={handleClose}
-                    className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
-                    activeOpacity={0.8}
-                  >
-                    <Text className="text-gray-400 font-primary-semibold text-base">Cancel</Text>
-                  </TouchableOpacity>
+                        <View className="flex-row w-full px-1 gap-x-5">
+                          <TouchableOpacity
+                            onPress={() => handleStartWithMode('map')}
+                            className="flex-1 rounded-2xl bg-black/80 border border-gray-900 overflow-hidden"
+                            activeOpacity={0.9}
+                          >
+                            <View className="relative">
+                              <Image
+                                source={require('../../assets/images/session-map.png')}
+                                style={{ width: '100%', height: 220 }}
+                                contentFit="cover"
+                              />
+                              <View className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-1">
+                                <Text className="text-xs font-primary-semibold text-gray-200">
+                                  Smooth 2D Map
+                                </Text>
+                              </View>
+                            </View>
+                            <View className="px-3 pt-3 pb-3">
+                              <Text className="text-white text-center font-primary-bold text-lg">
+                                Economy
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
 
-                  <TouchableOpacity
-                    onPress={handleNext}
-                    disabled={selectedTaskIds.size === 0}
-                    className={`flex-1 py-4 rounded-xl items-center ${selectedTaskIds.size > 0 ? 'bg-primary' : 'bg-gray-800'
-                      }`}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
-                        }`}
-                    >
-                      Next: Choose Trip
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <TouchableOpacity
-              onPress={() => setStep('planet')}
-              className="mb-4"
-            >
-              <Text className="text-primary font-primary-semibold text-sm">
-                ← Back to Trips
-              </Text>
-            </TouchableOpacity>
-
-            {selectedTrip && (
-              <>
-                <Text className="text-white font-primary-bold text-2xl mb-2">
-                  Choose Session Type
-                </Text>
-                <Text className="text-gray-400 font-primary-medium text-sm mb-3">
-                  How do you want to fly from {selectedTrip.from} to {selectedTrip.to}?
-                </Text>
-
-                {!user?.is_premium && (
-                  <Text className="text-xs font-primary-medium text-secondary mb-5">
-                    {remaining3DTrials === null
-                      ? 'Checking your free 3D sessions...'
-                      : remaining3DTrials > 0
-                      ? `${remaining3DTrials} free 3D session${remaining3DTrials > 1 ? 's' : ''} left`
-                      : 'No free 3D sessions left • 3D requires First Class'}
-                  </Text>
-                )}
-
-                <View className="mb-6 p-4 rounded-2xl bg-card border border-gray-800/60">
-                  <Text className="text-white font-primary-semibold text-base mb-1">
-                    {selectedTrip.from} → {selectedTrip.to}
-                  </Text>
-                  <Text className="text-gray-400 font-primary-medium text-sm">
-                    {selectedTrip.description} • {formatDuration(selectedTrip.duration)}
-                  </Text>
-                </View>
-
-                <View className="flex flex-row w-full justify-between px-2">
-                  <TouchableOpacity
-                    onPress={() => handleStartWithMode('map')}
-                    className={`py-4 px-4 rounded-xl items-center bg-black`}
-                  >
-                    <Image
-                      source={require('../../assets/images/session-map.png')}
-                      style={{ width: 140, height: 180 }}
-                      contentFit="contain"
-                      className='rounded-lg'
-                    />
-                    <Text className="text-white font-primary-bold text-xl mt-3">
-                      2D
-                    </Text>
-                  </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleStartWithMode('3d')}
+                            className={`flex-1 rounded-3xl overflow-hidden border-2 border-secondary bg-secondary/10`}
+                            activeOpacity={0.9}
+                          >
+                            <View className="relative">
+                              <Video
+                                ref={cinematicVideoRef}
+                                source={require('../../assets/videos/session-3d.mp4')}
+                                resizeMode={ResizeMode.COVER}
+                                shouldPlay
+                                isLooping
+                                isMuted
+                                
+                                style={{ width: '100%', height: 220 }}
+                              />
 
 
 
-                  <TouchableOpacity
-                    onPress={() => handleStartWithMode('3d')}
-                    className={`py-4 px-4 rounded-xl items-center bg-black ${
-                      !user?.is_premium && 'border border-secondary'
-                    }`}
+                              {!user?.is_premium && (
+                                <View className="absolute bottom-3 right-3 rounded-full bg-secondary px-2.5 py-1.5">
+                                  <Text className="text-[11px] font-primary-semibold text-black">
+                                    Upgrade to unlock
+                                  </Text>
+                                </View>
+                              )}
 
-                  >
-                    
-                    <Image
-                      source={require('../../assets/images/session-3d.png')}
-                      style={{ width: 140, height: 180, borderRadius: 8 }}
-                      contentFit="fill"
-                      className='rounded-lg'
-                    />
-                    <Text
-                      className="text-white font-primary-bold text-xl mt-3"
-                    >
-                      3D
-                    </Text>
-                    {!user?.is_premium && remaining3DTrials !== null && (
-                      <Text className="text-sm font-primary-medium text-gray-400 mt-1">
-                        {remaining3DTrials > 0
-                          && `${remaining3DTrials} free left`}
-                      </Text>
+                              <View className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-1">
+                                <Text className="text-xs font-primary-semibold text-gray-200">
+                                  Cinematic 3D
+                                </Text>
+                              </View>
+                            </View>
+                            <View className="px-3 pt-3 pb-3 border-t border-secondary/40 bg-black/70">
+                              <View style={{
+                                backgroundColor: '#A78BFA',
+                                paddingHorizontal: 12,
+                                paddingVertical: 3,
+                                borderRadius: 6,
+                                shadowColor: '#A78BFA',
+                                shadowOffset: { width: 0, height: 0 },
+                                shadowOpacity: 0.7,
+                                shadowRadius: 10,
+                                elevation: 10,
+                              }}>
+                                <Text className="text-white font-primary-bold text-base text-center tracking-wider">FIRST CLASS</Text>
+                              </View>
+
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      </>
                     )}
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </>
-        )}
-        </BottomSheetView>
-      </BottomSheet>
+                  </>
+                )}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </>
   );
 }

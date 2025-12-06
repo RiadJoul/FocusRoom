@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Model3DViewer } from './Space3DViewer';
 import { SpaceMapViewer } from './SpaceMapViewer';
 import { PlanetTrip, formatDistance } from './PlanetTrips';
+import * as Notifications from 'expo-notifications';
 
 interface FocusSessionScreenProps {
   tasks: Task[];
@@ -42,6 +43,11 @@ export function FocusSessionScreen({
   const [showTaskOverlay, setShowTaskOverlay] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const [sessionEndTimestamp, setSessionEndTimestamp] = useState<number>(
+    () => Date.now() + trip.duration * 1000
+  );
+  const pauseStartedAtRef = useRef<number | null>(null);
+  const notificationIdRef = useRef<string | null>(null);
 
   // Setup and play ambient sound
   useEffect(() => {
@@ -109,28 +115,96 @@ export function FocusSessionScreen({
     }
   }, [sessionEnded]);
 
-  // Countdown timer
+  // Schedule a completion notification once, based on the expected end time.
+  // The OS will deliver it at the absolute fire date, even if the app is
+  // backgrounded. We cancel and reschedule whenever the end timestamp changes
+  // (for example when pausing/resuming), or when the session ends early.
   useEffect(() => {
-    if (!isPaused && !sessionEnded) {
-      intervalRef.current = setInterval(() => {
-        setRemainingSeconds(prev => {
-          if (prev <= 1) {
-            // Timer reached zero
-            setSessionEnded(true);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            return 0;
-          }
-          return prev - 1;
+    const schedule = async () => {
+      // Clear any existing scheduled notification first
+      if (notificationIdRef.current) {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+        } catch {
+          // ignore
+        }
+        notificationIdRef.current = null;
+      }
+
+      if (sessionEnded || isPaused) return;
+
+      const fireTime = sessionEndTimestamp;
+      if (fireTime <= Date.now()) return;
+
+      try {
+        const id = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Journey complete ✨',
+            body: `Your focus session from ${trip.from} to ${trip.to} has finished.`,
+            sound: true,
+            data: { type: 'focus_session_complete' },
+          },
+          // Use an absolute fire date to avoid any ambiguity with relative seconds.
+          trigger: new Date(fireTime),
         });
-      }, 1000);
+        notificationIdRef.current = id;
+      } catch (err) {
+        console.error('Failed to schedule session completion notification:', err);
+      }
+    };
+
+    schedule();
+
+    // Cleanup on unmount
+    return () => {
+      if (notificationIdRef.current) {
+        Notifications.cancelScheduledNotificationAsync(notificationIdRef.current).catch(
+          () => {},
+        );
+        notificationIdRef.current = null;
+      }
+    };
+  }, [sessionEndTimestamp, isPaused, sessionEnded, trip.from, trip.to]);
+
+  // Countdown timer based on absolute end timestamp.
+  // This keeps the session progressing correctly even if the app is backgrounded.
+  useEffect(() => {
+    if (isPaused || sessionEnded) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
     }
+
+    const tick = () => {
+      const remainingMs = sessionEndTimestamp - Date.now();
+      if (remainingMs <= 0) {
+        if (!sessionEnded) {
+          setRemainingSeconds(0);
+          setSessionEnded(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      } else {
+        setRemainingSeconds(Math.ceil(remainingMs / 1000));
+      }
+    };
+
+    // Run once immediately to sync after resume, then every second.
+    tick();
+    intervalRef.current = setInterval(tick, 1000);
 
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [isPaused, sessionEnded]);
+  }, [isPaused, sessionEnded, sessionEndTimestamp]);
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -161,7 +235,19 @@ export function FocusSessionScreen({
 
   const handlePause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsPaused(!isPaused);
+    setIsPaused((prev) => {
+      const next = !prev;
+      if (next) {
+        // Pausing: remember when we paused so we can shift end time on resume.
+        pauseStartedAtRef.current = Date.now();
+      } else if (pauseStartedAtRef.current) {
+        // Resuming: push the end timestamp forward by the paused duration.
+        const pauseDuration = Date.now() - pauseStartedAtRef.current;
+        setSessionEndTimestamp((prevEnd) => prevEnd + pauseDuration);
+        pauseStartedAtRef.current = null;
+      }
+      return next;
+    });
   };
 
   const handleMuteToggle = () => {
@@ -497,7 +583,7 @@ export function FocusSessionScreen({
             style={{ width: 260 }}
           >
             <View
-              className="rounded-r-3xl rounded-l-none px-3 py-3 border border-primary/40 border-l-0"
+              className="rounded-r-lg rounded-l-none px-3 py-3 border border-primary/40 border-l-0"
               style={{
                 backgroundColor: '#020617EE',
                 shadowColor: '#4F46E5',
@@ -524,7 +610,7 @@ export function FocusSessionScreen({
                     </Text>
                   </View>
                 </View>
-                <View className="px-2 py-1 rounded-full bg-primary/15 border border-primary/40">
+                <View className="px-2 py-1 rounded-lg bg-primary/15 border border-primary/40">
                   <Text className="text-primary font-primary-semibold text-[10px]">
                     {completedTaskIds.size}/{tasks.length}
                   </Text>
@@ -547,14 +633,14 @@ export function FocusSessionScreen({
                         overshootRight={false}
                         onSwipeableOpen={() => handleCompleteTask(task.id)}
                         renderLeftActions={() => (
-                          <View className="flex-1 bg-primary/40 justify-center rounded-xl ml-1 h-8">
+                          <View className="flex-1 bg-primary/40 justify-center rounded-lg ml-1 h-8">
                             <Text className="text-background font-primary-bold text-xs pl-4 tracking-wide">
                               Complete
                             </Text>
                           </View>
                         )}
                       >
-                        <View className="mb-2 px-3 py-2 rounded-xl bg-slate-900/95 border border-slate-700/80 flex-row items-center">
+                        <View className="mb-2 px-3 py-2 rounded-lg bg-slate-900/95 border border-slate-700/80 flex-row items-center">
                           <View
                             className="w-3 h-3 rounded-lg mr-2 bg-secondary/60"
                             

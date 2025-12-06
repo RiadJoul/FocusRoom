@@ -11,16 +11,45 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Text, View, AppState } from 'react-native';
 import Purchases from 'react-native-purchases';
-import RevenueCatUI from "react-native-purchases-ui";
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
 import { analytics, Events } from '../lib/analytics';
-import { presentPaywallOnce } from '../lib/paywall/presentPaywall';
 import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
+import * as Notifications from 'expo-notifications';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+Notifications.setNotificationHandler({
+  handleNotification: async (notification) => {
+    const data = notification.request.content.data ?? {};
+    const isFocusSessionComplete = data.type === 'focus_session_complete';
+    const isForeground = AppState.currentState === 'active';
+
+    // If the app is in the foreground and this is a focus-session completion
+    // notification, don't show any system UI. We'll handle the end-of-session
+    // UX inside the app itself.
+    if (isFocusSessionComplete && isForeground) {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: false,
+      shouldShowList: false,
+    };
+  },
+});
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -44,22 +73,7 @@ export default function RootLayout() {
 
   const [checking, setChecking] = useState(true);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
-
-  // Trial logic
-  const [trialExpired, setTrialExpired] = useState(false);
-  const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
-
-  useEffect(() => {
-    if (user?.created_at) {
-      const signupDate = new Date(user.created_at);
-      const now = new Date();
-      const diffMs = now.getTime() - signupDate.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const trialDays = 7;
-      setTrialExpired(diffDays >= trialDays);
-    }
-  }, [user?.created_at]);
 
   const REVENUECAT_APPLE_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
   const [isRevenueCatReady, setIsRevenueCatReady] = useState(false);
@@ -67,7 +81,7 @@ export default function RootLayout() {
   // Configure RevenueCat once on mount
   useEffect(() => {
     if (Platform.OS === 'ios' && REVENUECAT_APPLE_API_KEY) {
-      Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
+      Purchases.setLogLevel(Purchases.LOG_LEVEL.INFO);
       Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
       setIsRevenueCatReady(true);
     }
@@ -76,7 +90,6 @@ export default function RootLayout() {
   // Link RevenueCat customer to Supabase user.id (app_user_id)
   useEffect(() => {
     if (!isRevenueCatReady || !user?.id || Platform.OS !== 'ios') return;
-
     const logInToRevenueCat = async () => {
       try {
         await Purchases.logIn(user.id);
@@ -98,21 +111,6 @@ export default function RootLayout() {
       unsubscribe();
     };
   }, []);
-
-
-  async function presentPaywall(): Promise<boolean> {
-    if (isPresentingPaywall || !isRevenueCatReady) return false;
-    setIsPresentingPaywall(true);
-
-    try {
-      return await presentPaywallOnce({
-        userId: user?.id,
-        source: 'root_layout_trial',
-      });
-    } finally {
-      setIsPresentingPaywall(false);
-    }
-  }
 
 
   // Initialize Mixpanel
@@ -294,11 +292,6 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontsError, checking]);
 
-  useEffect(() => {
-    if (trialExpired && user?.is_premium === false) {
-      presentPaywall();
-    }
-  }, [trialExpired]);
 
   const handleRetryConnection = () => {
     NetInfo.fetch().then((state) => {
@@ -312,16 +305,17 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <Stack screenOptions={
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <Stack screenOptions={
         {
           headerShown: false,
           contentStyle: { backgroundColor: '#0A0A0A' },
-          animation: 'fade',
+          animation: 'fade_from_bottom',
         }
       }>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
+        </Stack>
       {isOffline && (
         <View style={[StyleSheet.absoluteFillObject, offlineOverlayStyles.container]}>
           <Text style={offlineOverlayStyles.title}>
@@ -336,7 +330,8 @@ export default function RootLayout() {
         </View>
       )}
       <StatusBar style="light" />
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

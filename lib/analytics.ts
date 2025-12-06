@@ -131,14 +131,12 @@ export const analytics = new Analytics();
 // Event names (keep consistent)
 export const Events = {
   // Auth
-  SIGN_UP: 'Sign Up',
   SIGN_IN: 'Sign In',
   SIGN_OUT: 'Sign Out',
   
   // Onboarding
   ONBOARDING_STARTED: 'Onboarding Started',
   ONBOARDING_COMPLETED: 'Onboarding Completed',
-  ONBOARDING_SKIPPED: 'Onboarding Skipped',
   
   // Tasks
   TASK_CREATED: 'Task Created',
@@ -149,32 +147,26 @@ export const Events = {
   // Focus Sessions
   SESSION_STARTED: 'Session Started',
   SESSION_COMPLETED: 'Session Completed',
-  SESSION_PAUSED: 'Session Paused',
-  SESSION_RESUMED: 'Session Resumed',
   SESSION_CANCELLED: 'Session Cancelled',
   
   // Trip Selection
   TRIP_MODAL_OPENED: 'Trip Modal Opened',
   TRIP_SELECTED: 'Trip Selected',
   TASK_SELECTED_FOR_SESSION: 'Task Selected for Session',
-  
-  // Ticket Animation
-  TICKET_CUT_STARTED: 'Ticket Cut Started',
-  TICKET_CUT_COMPLETED: 'Ticket Cut Completed',
+
   
   // Profile
   PROFILE_VIEWED: 'Profile Viewed',
   PROFILE_NAME_UPDATED: 'Profile Name Updated',
-  SETTINGS_CHANGED: 'Settings Changed',
   
-  // Stats
-  STATS_VIEWED: 'Stats Viewed',
-  FOCUS_HEALTH_SCORE_VIEWED: 'Focus Health Score Viewed',
   
   // Subscription (future)
   PAYWALL_VIEWED: 'Paywall Viewed',
   PAYWALL_CLOSED: 'Paywall Closed',
   SUBSCRIPTION_STARTED: 'Subscription Started',
+  
+  // Notifications
+  DAILY_NOTIFICATION_SETTINGS_UPDATED: 'Daily Notification Settings Updated',
   
   // Screen Views
   SCREEN_VIEW: 'Screen View',
@@ -195,6 +187,7 @@ export const Properties = {
   // Session
   DURATION_SECONDS: 'duration_seconds',
   DURATION_MINUTES: 'duration_minutes',
+  SESSION_STATUS: 'session_status',
   TRIP_ID: 'trip_id',
   TRIP_NAME: 'trip_name',
   TRIP_DESTINATION: 'trip_destination',
@@ -212,19 +205,10 @@ export const Properties = {
   TOTAL_SESSIONS: 'total_sessions',
   TOTAL_MINUTES: 'total_minutes',
   TOTAL_DISTANCE_KM: 'total_distance_km',
-  FOCUS_HEALTH_SCORE: 'focus_health_score',
-  CURRENT_STREAK: 'current_streak',
   
   // Screen
   SCREEN_NAME: 'screen_name',
-  PREVIOUS_SCREEN: 'previous_screen',
-  
-  // Settings
-  SETTING_NAME: 'setting_name',
-  SETTING_VALUE: 'setting_value',
   
   // Subscription
   PLAN_TYPE: 'plan_type',
-  PRICE: 'price',
-  TRIAL_DAYS_LEFT: 'trial_days_left',
 };
