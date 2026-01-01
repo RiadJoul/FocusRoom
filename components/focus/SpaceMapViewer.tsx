@@ -103,7 +103,7 @@ export function SpaceMapViewer() {
         position: 'absolute',
         top: offsetY,
         left: 0,
-        width,
+        width: width,
         height: mapHeight,
       }}
     >
@@ -180,7 +180,7 @@ export function SpaceMapViewer() {
       className="flex-1 bg-black"
       style={{
         // Rotate the whole scene slightly and scale up
-        transform: [{ rotate: '15deg' }, { scale: 1.3 }],
+        transform: [{ rotate: '15deg' }, { scale: 1.5 }],
       }}
     >
       {/* Space Map Background */}
@@ -192,7 +192,7 @@ export function SpaceMapViewer() {
         }}
       >
         {/* Duplicated space background for seamless looping */}
-        <View style={{ width, height: totalHeight}}>
+        <View style={{ width: width, height: totalHeight}}>
           {renderLayer(0)}
           {renderLayer(mapHeight)}
         </View>

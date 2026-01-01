@@ -1,7 +1,7 @@
 import { Task } from '@/lib/stores/taskStore';
+import { useListStore } from '@/lib/stores/listStore';
 import { useUserStore } from '@/lib/stores/userStore';
 import { formatDueDate, parseLocalDateKey } from '@/lib/utils/dateUtils';
-import { getPriorityColor } from '@/lib/utils/taskUtils';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, ScrollView, Text, TouchableOpacity, View, TouchableWithoutFeedback } from 'react-native';
@@ -19,6 +19,7 @@ interface TaskSelectionModalProps {
 
 export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: TaskSelectionModalProps) {
   const user = useUserStore((state) => state.user);
+  const lists = useListStore((state) => state.lists);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<'tasks' | 'planet' | 'mode'>('tasks');
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
@@ -231,93 +232,128 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
         <TouchableWithoutFeedback onPress={handleClose}>
           <View className="flex-1 justify-end bg-black/50">
             <TouchableWithoutFeedback>
-              <View className="bg-background rounded-t-3xl px-5 pt-4 pb-2 min-h-[70%]">
+              <View className="bg-background rounded-t-3xl px-5 pt-4 pb-2 max-h-[85%]">
                 {step === 'tasks' ? (
-                  <>
+                  <View style={{ flexShrink: 1, maxHeight: '100%' }}>
                     <Text className="text-white font-primary-bold text-2xl mb-2">Select Tasks</Text>
-                    <Text className="text-gray-400 font-primary-medium text-sm mb-6">
+                    <Text className="text-gray-400 font-primary-medium text-sm mb-4">
                       Choose up to 3 tasks to focus on ({selectedTaskIds.size}/3 selected)
                     </Text>
 
                     {tasksToShow.length === 0 ? (
-                      <View className="flex-1 items-center justify-center">
+                      <View className="flex-1 items-center justify-center py-8">
                         <Text className="text-gray-500 font-primary-medium text-center">
                           No tasks available. Add some tasks first!
                         </Text>
                       </View>
                     ) : (
                       <>
-                        <ScrollView
-                          showsVerticalScrollIndicator={false}
-                          style={{ marginBottom: 20 }}
-                        >
-                          {tasksToShow.map((task) => {
-                            const isSelected = selectedTaskIds.has(task.id);
-                            const canSelect = selectedTaskIds.size < 3 || isSelected;
+                        <View style={{ maxHeight: '72%' }}>
+                          <ScrollView
+                            showsVerticalScrollIndicator={true}
+                            contentContainerStyle={{ paddingBottom: 16 }}
+                          >
+                            {tasksToShow.map((task) => {
+                              const list = lists.find((l) => l.id === task.list_id);
+                              const isSelected = selectedTaskIds.has(task.id);
+                              const canSelect = selectedTaskIds.size < 3 || isSelected;
 
-                            return (
-                              <TouchableOpacity
-                                key={task.id}
-                                onPress={() => handleToggleTask(task.id)}
-                                disabled={!canSelect && !isSelected}
-                                className={`mb-3 p-4 rounded-2xl border ${isSelected
-                                  ? 'bg-primary/10 border-primary'
-                                  : canSelect
-                                    ? 'bg-card border-gray-800'
-                                    : 'bg-card-dark border-gray-800/50'
-                                  }`}
-                                activeOpacity={0.7}
-                              >
-                                <View className="flex-row items-center">
-                                  {/* Checkbox */}
-                                  <View
-                                    className={`w-6 h-6 rounded-full border-2 mr-3 items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-700'
-                                      }`}
-                                  >
-                                    {isSelected && (
-                                      <Text className="text-background font-primary-bold text-sm">✓</Text>
-                                    )}
-                                  </View>
-
-                                  {/* Task Content */}
-                                  <View className="flex-1">
-                                    <Text
-                                      className={`font-primary-semibold text-base leading-tight ${canSelect ? 'text-white' : 'text-gray-600'
+                              return (
+                                <TouchableOpacity
+                                  key={task.id}
+                                  onPress={() => handleToggleTask(task.id)}
+                                  disabled={!canSelect && !isSelected}
+                                  className={`mb-3 p-4 rounded-2xl border ${isSelected
+                                    ? 'bg-primary/10 border-primary'
+                                    : canSelect
+                                      ? 'bg-card border-gray-800'
+                                      : 'bg-card-dark border-gray-800/50'
+                                    }`}
+                                  activeOpacity={0.7}
+                                >
+                                  <View className="flex-row items-center">
+                                    {/* Checkbox */}
+                                    <View
+                                      className={`w-6 h-6 rounded-full border-2 mr-3 items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-700'
                                         }`}
                                     >
-                                      {task.title}
-                                    </Text>
-                                    <View className="flex-row items-center mt-2">
-                                      {/* Priority Badge */}
-                                      <View className={`flex-row items-center px-2 py-1 rounded-md ${getPriorityColor(task.priority)}`}>
-                                        <Text
-                                          className="text-xs font-primary-medium capitalize"
-                                          style={{
-                                            color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
-                                          }}
-                                        >
-                                          {task.priority}
-                                        </Text>
-                                      </View>
-
-                                      {/* Due Date */}
-                                      {task.due_date && (
-                                        <View className="flex-row items-center">
-                                          <Text className="flex items-center text-xs font-primary-medium text-gray-500">
-                                            <Ionicons name='time-outline' /> {formatDueDate(new Date(task.due_date))}
-                                          </Text>
-                                        </View>
+                                      {isSelected && (
+                                        <Text className="text-background font-primary-bold text-sm">✓</Text>
                                       )}
                                     </View>
+
+                                    {/* Task Content */}
+                                    <View className="flex-1">
+                                      <View className='flex flex-row items-center'>
+                                        {/* Task title */}
+                                        <Text
+                                          className={`font-primary-semibold text-base leading-tight ${canSelect ? 'text-white' : 'text-gray-600'
+                                            }`}
+                                        >
+                                          {task.title} <Text
+                                            className="text-xs font-primary-medium capitalize"
+                                            style={{
+                                              color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
+                                            }}
+                                          >
+                                            {task.priority}
+                                          </Text>
+                                        </Text>
+                                        
+                                      </View>
+
+
+                                      {/* List pill + meta */}
+                                      <View className="flex-row items-center mt-1">
+                                        {list && (
+                                          <View
+                                            className="flex-row items-center px-2 py-1 rounded-full mr-2"
+                                            style={{
+                                              backgroundColor: `${list.color ?? '#4B5563'}33`,
+                                            }}
+                                          >
+                                            {list.icon && (
+                                              <Ionicons
+                                                name={list.icon as any}
+                                                size={12}
+                                                color={list.color || '#E5E7EB'}
+                                              />
+                                            )}
+                                            <Text
+                                              className="ml-1 text-[11px] font-primary-medium"
+                                              style={{
+                                                color: list.color || '#E5E7EB',
+                                              }}
+                                            >
+                                              {list.title}
+                                            </Text>
+                                          </View>
+                                        )}
+                                      </View>
+
+                                      <View className="flex-row items-center mt-2">
+
+
+                                        {/* Due Date */}
+                                        {task.due_date && (
+                                          <View className="flex-row items-center ml-2">
+                                            <Ionicons name='time-outline' size={12} color="#6b7280" />
+                                            <Text className="ml-1 text-xs font-primary-medium text-gray-500">
+                                              {formatDueDate(new Date(task.due_date))}
+                                            </Text>
+                                          </View>
+                                        )}
+                                      </View>
+                                    </View>
                                   </View>
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </ScrollView>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
 
                         {/* Action Buttons */}
-                        <View className="flex-row gap-3 pb-4">
+                        <View className="flex-row gap-3 pt-2 pb-4">
                           <TouchableOpacity
                             onPress={handleClose}
                             className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
@@ -329,12 +365,12 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                           <TouchableOpacity
                             onPress={handleNext}
                             disabled={selectedTaskIds.size === 0}
-                            className={`flex-1 py-4 rounded-xl items-center ${selectedTaskIds.size > 0 ? 'bg-primary' : 'bg-gray-800'
+                            className={`flex-1 py-4 rounded-xl items-center ${selectedTaskIds.size > 0 ? 'bg-white' : 'bg-primary'
                               }`}
                             activeOpacity={0.8}
                           >
                             <Text
-                              className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
+                              className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-black' : 'text-black'
                                 }`}
                             >
                               Next: Choose Trip
@@ -343,7 +379,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                         </View>
                       </>
                     )}
-                  </>
+                  </View>
                 ) : (
                   <>
                     <TouchableOpacity
@@ -363,9 +399,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                         <Text className="text-white font-primary-bold text-2xl mb-1">
                           Choose your cockpit view
                         </Text>
-                        <Text className="text-gray-400 font-primary-medium text-sm mb-4">
-                          How do you want to fly from {selectedTrip.from} to {selectedTrip.to} today?
-                        </Text>
+                        
 
                         <View className="mb-6 p-4 rounded-2xl bg-card border border-gray-800/60">
                           <View className="flex-row items-center justify-between mb-3">
@@ -435,19 +469,13 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                                 shouldPlay
                                 isLooping
                                 isMuted
-                                
+
                                 style={{ width: '100%', height: 220 }}
                               />
 
 
 
-                              {!user?.is_premium && (
-                                <View className="absolute bottom-3 right-3 rounded-full bg-secondary px-2.5 py-1.5">
-                                  <Text className="text-[11px] font-primary-semibold text-black">
-                                    Upgrade to unlock
-                                  </Text>
-                                </View>
-                              )}
+
 
                               <View className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-1">
                                 <Text className="text-xs font-primary-semibold text-gray-200">

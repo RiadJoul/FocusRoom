@@ -8,15 +8,20 @@ import { Task, useTaskStore } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
 import { getIncompleteTasks } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
-import { useNavigation } from 'expo-router';
+import { useFocusEffect, useNavigation } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as StoreReview from 'expo-store-review';
-import SpaceStation from '@/components/focus/SpaceStation';
-import { BlurView } from 'expo-blur';
+import { TerraformingPlanet } from '@/components/focus/TerraformingPlanet';
+import {
+  blockSelection,
+  unblockSelection,
+  getFamilyActivitySelectionId,
+} from 'react-native-device-activity';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
+import { GalaxyMap } from '@/components/focus/GalaxyMap';
 
 export default function FocusTab() {
   const navigation = useNavigation();
@@ -25,6 +30,7 @@ export default function FocusTab() {
   const tasks = useTaskStore((state) => state.tasks);
   const toggleComplete = useTaskStore((state) => state.toggleComplete);
   const stats = useSessionStore((state) => state.stats);
+  const fetchSessions = useSessionStore((state) => state.fetchSessions);
 
 
   //stats
@@ -34,18 +40,44 @@ export default function FocusTab() {
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
   const [showTicket, setShowTicket] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [blockAppsEnabled, setBlockAppsEnabled] = useState(false);
 
   // session visual type
   const [sessionType, setSessionType] = useState<'3d' | 'map'>('map');
 
   const bottomSheetRef = useRef<BottomSheet>(null);
 
-  // Load stats when component mounts
+  // Load stats and sessions when component mounts
   useEffect(() => {
     if (user?.id) {
       fetchStats(user.id);
+      fetchSessions(user.id);
     }
-  }, [user?.id, fetchStats]);
+  }, [user?.id, fetchStats, fetchSessions]);
+
+
+  // Track screen view once on mount
+  useEffect(() => {
+    analytics.track(Events.SCREEN_VIEW, {
+      [Properties.SCREEN_NAME]: 'Focus',
+    });
+  }, []);
+
+  // Keep blockAppsEnabled in sync whenever Focus tab comes into view
+  useFocusEffect(
+    useCallback(() => {
+      const loadBlockSetting = async () => {
+        try {
+          const value = await AsyncStorage.getItem('block_apps_enabled');
+          setBlockAppsEnabled(value === 'true');
+        } catch (err) {
+          console.warn('Failed to load block_apps_enabled in focus tab', err);
+        }
+      };
+
+      loadBlockSetting();
+    }, [])
+  );
 
   // Hide/show tab bar based on session state
   useEffect(() => {
@@ -96,6 +128,20 @@ export default function FocusTab() {
     setSessionActive(true);
     setSessionStartTime(new Date());
 
+    if (blockAppsEnabled) {
+      try {
+        const selectionToken = getFamilyActivitySelectionId('focusroom_block_apps');
+        if (selectionToken) {
+          blockSelection(
+            { activitySelectionId: 'focusroom_block_apps' },
+            'focusSessionStarted',
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to block apps for focus session', err);
+      }
+    }
+
     if (selectedTrip) {
       analytics.track(Events.SESSION_STARTED, {
         [Properties.TRIP_ID]: selectedTrip.id,
@@ -107,7 +153,7 @@ export default function FocusTab() {
         session_type: sessionType === '3d' ? 'first_class' : 'economy',
       });
     }
-  }, [selectedTrip, selectedTasks, sessionType]);
+  }, [selectedTrip, selectedTasks, sessionType, blockAppsEnabled]);
 
   const handleEndSession = useCallback(
     async (duration: number, completedTaskIds: string[]) => {
@@ -169,6 +215,21 @@ export default function FocusTab() {
         console.error('Failed to save session:', error);
       }
 
+      // Unblock apps when focus session ends (if we enabled blocking)
+      if (blockAppsEnabled) {
+        try {
+          const selectionToken = getFamilyActivitySelectionId('focusroom_block_apps');
+          if (selectionToken) {
+            unblockSelection(
+              { activitySelectionId: 'focusroom_block_apps' },
+              'focusSessionEnded',
+            );
+          }
+        } catch (err) {
+          console.warn('Failed to unblock apps after focus session', err);
+        }
+      }
+
       setSessionActive(false);
       setSelectedTasks([]);
       setSelectedTrip(null);
@@ -221,7 +282,7 @@ export default function FocusTab() {
                 <Text className="text-gray-400 font-primary-medium text-xs uppercase tracking-[0.16em]">
                   Focus Mission Control
                 </Text>
-                
+
               </View>
             </View>
           </View>
@@ -305,56 +366,8 @@ export default function FocusTab() {
 
 
 
-        {/* Gamified ship card */}
-        <View className="bg-card rounded-3xl px-4 py-5 mb-6 border border-white/5">
-          <View className="flex-row items-center justify-between mb-3 px-1">
-            <View>
-              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.18em]">
-                Ship Upgrades
-              </Text>
-              <Text className="text-white font-primary-semibold text-base mt-1">
-                Space Station
-              </Text>
-            </View>
-            {!user?.is_premium && (
-              <View className="bg-primary/20 border border-primary/40 rounded-full px-2.5 py-1">
-                <Text className="text-primary font-primary-semibold text-[10px] uppercase tracking-[0.16em]">
-                  Premium
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View className="relative mt-1">
-            <SpaceStation />
-
-            {!user?.is_premium && (
-              <BlurView
-                intensity={40}
-                tint="dark"
-                style={StyleSheet.absoluteFillObject}
-              >
-                <View className="flex-1 items-center justify-center px-6">
-                  <Text className="text-white font-primary-semibold text-sm text-center mb-2">
-                    Upgrade to unlock your evolving spaceship.
-                  </Text>
-                  <Text className="text-gray-300 font-primary-medium text-xs text-center mb-3">
-                    Your focus sessions will power up this ship with new parts and effects.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={handleOpenPremiumSpaceStation}
-                    className="px-4 py-2 rounded-full bg-primary"
-                    activeOpacity={0.85}
-                  >
-                    <Text className="text-background font-primary-bold text-xs uppercase tracking-[0.16em]">
-                      Unlock First Class
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </BlurView>
-            )}
-          </View>
-        </View>
+        {/* Terraforming planet progression */}
+        {/* <GalaxyMap/> */}
       </ScrollView>
 
       {/* Task Selection Bottom Sheet */}

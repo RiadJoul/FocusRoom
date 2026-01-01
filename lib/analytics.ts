@@ -155,9 +155,8 @@ export const Events = {
   TASK_SELECTED_FOR_SESSION: 'Task Selected for Session',
 
   
-  // Profile
-  PROFILE_VIEWED: 'Profile Viewed',
-  PROFILE_NAME_UPDATED: 'Profile Name Updated',
+// cockpit
+  USERNAME_UPDATED: 'Username Updated',
   
   
   // Subscription (future)
@@ -167,13 +166,17 @@ export const Events = {
   
   // Notifications
   DAILY_NOTIFICATION_SETTINGS_UPDATED: 'Daily Notification Settings Updated',
+  // Blocking Apps feature
+  BLOCK_APPS_OPTION: 'Block Apps Option',
   
   // Screen Views
   SCREEN_VIEW: 'Screen View',
   
   // App Lifecycle
   APP_OPENED: 'App Opened',
-  APP_BACKGROUNDED: 'App Backgrounded',
+
+  // Delete Account
+  ACCOUNT_DELETED: 'Account Deleted',
 };
 
 // Property names

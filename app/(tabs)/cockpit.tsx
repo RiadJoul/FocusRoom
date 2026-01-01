@@ -2,6 +2,7 @@ import { analytics, Events, Properties } from '@/lib/analytics';
 import { privacyPolicyUrl, supportEmail, websiteUrl } from '@/lib/constants';
 import { useSessionStore } from '@/lib/stores/sessionStore';
 import { useTaskStore } from '@/lib/stores/taskStore';
+import { useListStore } from '@/lib/stores/listStore';
 import { useUserStore } from '@/lib/stores/userStore';
 import { supabase, SUPABASE_KEY, SUPABASE_URL } from '@/lib/supabase';
 import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons, SimpleLineIcons } from '@expo/vector-icons';
@@ -12,15 +13,21 @@ import Purchases from 'react-native-purchases';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomSheet from '@gorhom/bottom-sheet';
-import { NotificationsBottomSheet } from '@/components/profile/NotificationsBottomSheet';
-import * as StoreReview from 'expo-store-review';
 
-export default function Profile() {
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as StoreReview from 'expo-store-review';
+import { NotificationsBottomSheet } from '@/components/cockpit/NotificationsBottomSheet';
+import { BlockAppsBottomSheet } from '@/components/cockpit/BlockingApps';
+
+export default function Cockpit() {
   const user = useUserStore((state) => state.user);
   const clearUser = useUserStore((state) => state.clearUser);
   const stats = useSessionStore((state) => state.stats);
   const fetchStats = useSessionStore((state) => state.fetchStats);
   const tasks = useTaskStore((state) => state.tasks);
+  const addTask = useTaskStore((state) => state.addTask);
+  const addList = useListStore((state) => state.addList);
+  const createSession = useSessionStore((state) => state.createSession);
   const router = useRouter();
 
 
@@ -31,8 +38,10 @@ export default function Profile() {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
   const [isSavingNotificationSettings, setIsSavingNotificationSettings] = useState(false);
+  const [isBlockingAppsEnabled, setIsBlockingAppsEnabled] = useState(false);
 
   const notificationsSheetRef = useRef<BottomSheet | null>(null);
+  const blockAppsSheetRef = useRef<BottomSheet | null>(null);
 
   // Load stats on mount
   useEffect(() => {
@@ -44,9 +53,36 @@ export default function Profile() {
     };
     loadData();
 
-    // Track profile view
-    analytics.track(Events.PROFILE_VIEWED);
+    analytics.track(Events.SCREEN_VIEW, {
+          [Properties.SCREEN_NAME]: 'Cockpit'
+        });
   }, [user?.id]);
+
+  // Load persisted block-apps toggle
+  useEffect(() => {
+    AsyncStorage.getItem('block_apps_enabled')
+      .then((value) => {
+        if (value === 'true') {
+          setIsBlockingAppsEnabled(true);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load block_apps_enabled', err);
+      });
+  }, []);
+
+  const handleChangeBlockAppsEnabled = (enabled: boolean) => {
+    setIsBlockingAppsEnabled(enabled);
+    AsyncStorage.setItem('block_apps_enabled', enabled ? 'true' : 'false').catch(
+      (err) => {
+        console.warn('Failed to persist block_apps_enabled', err);
+      },
+    );
+
+      analytics.track(Events.BLOCK_APPS_OPTION, {
+        enabled: enabled,
+      });
+  };
 
   // Calculate stats
   const completedTasks = tasks.filter(t => t.status === 'completed').length;
@@ -59,6 +95,83 @@ export default function Profile() {
 
   const openNotificationsSheet = () => {
     notificationsSheetRef.current?.expand();
+  };
+
+  const handleSeedDemoData = async () => {
+    if (!__DEV__) return;
+    if (!user?.id) {
+      Alert.alert('Demo Data', 'You need to be signed in to generate sample data.');
+      return;
+    }
+
+    Alert.alert(
+      'Generate Sample Data',
+      'This will add example lists, tasks, and sessions to your account so you can take screenshots.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Generate',
+          style: 'default',
+          onPress: async () => {
+            try {
+              // Create lists
+              const deepWorkList = await addList('Deep Work', 'rocket', '#a855f7');
+              const studyList = await addList('Study', 'book', '#38bdf8');
+              const lifeAdminList = await addList('Life Admin', 'checkbox', '#22c55e');
+
+              const lists = [deepWorkList, studyList, lifeAdminList].filter(Boolean) as {
+                id: string;
+              }[];
+
+              if (lists.length === 0) return;
+
+              // Create tasks
+              await addTask(lists[0].id, 'Ship FocusRoom 1.0', 'high');
+              await addTask(lists[0].id, 'Deep work: Design next feature', 'high');
+              await addTask(lists[0].id, 'Inbox zero sprint', 'medium');
+
+              await addTask(lists[1].id, 'Study: Algorithms problem set', 'high');
+              await addTask(lists[1].id, 'Review lecture notes', 'medium');
+              await addTask(lists[1].id, 'Summarize chapter in own words', 'medium');
+
+              await addTask(lists[2].id, 'Plan upcoming week', 'medium');
+              await addTask(lists[2].id, 'Clean workspace', 'low');
+              await addTask(lists[2].id, 'Respond to important messages', 'medium');
+
+              // Create focus sessions over last 7 days for excellent Focus Health
+              const now = new Date();
+              for (let i = 6; i >= 0; i--) {
+                const start = new Date(now);
+                start.setDate(now.getDate() - i);
+                start.setHours(9, 0, 0, 0);
+
+                const durationSeconds = 60 * 60; // 60 min
+                const end = new Date(start.getTime() + durationSeconds * 1000);
+
+                await createSession({
+                  user_id: user.id,
+                  started_at: start.toISOString(),
+                  ended_at: end.toISOString(),
+                  duration_seconds: durationSeconds,
+                  tasks_completed: 3,
+                  trip_id: 'earth-mars',
+                  trip_name: 'Earth → Mars',
+                  distance_km: 225_000_000,
+                });
+              }
+
+              // Refresh stats
+              await fetchStats(user.id);
+
+              Alert.alert('Done', 'Sample data added. You can now take screenshots.');
+            } catch (err) {
+              console.error('Failed to seed demo data:', err);
+              Alert.alert('Error', 'Failed to generate sample data.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSaveNotificationSettings = async (settings: { enabled: boolean; hour: number; minute: number }) => {
@@ -133,7 +246,7 @@ export default function Profile() {
       Alert.alert('Success', 'Name updated successfully!');
 
       // Track name update
-      analytics.track(Events.PROFILE_NAME_UPDATED, {
+      analytics.track(Events.USERNAME_UPDATED, {
         [Properties.NAME]: newName.trim(),
       });
 
@@ -184,7 +297,7 @@ export default function Profile() {
     try {
       return await presentPaywallOnce({
         userId: user?.id,
-        source: 'profile_screen',
+        source: 'cockpit_screen',
       });
     } finally {
       setIsPresentingPaywall(false);
@@ -237,6 +350,12 @@ export default function Profile() {
               } catch (error) {
                 console.error('RevenueCat logOut error on delete account:', error);
               }
+
+              //analytics track
+              analytics.track(Events.ACCOUNT_DELETED, {
+                user_id: user?.id,
+                email: user?.email,
+              });
 
               await supabase.auth.signOut();
               clearUser();
@@ -297,7 +416,7 @@ export default function Profile() {
       >
         {/* Header */}
         <View className="pt-6 pb-4">
-          <Text className="text-3xl font-primary-bold text-white">Profile</Text>
+          <Text className="text-2xl font-primary-bold text-white">Cockpit</Text>
         </View>
 
 
@@ -307,10 +426,8 @@ export default function Profile() {
           <View className="bg-card rounded-2xl p-6">
             <View className="flex-row items-center mb-4">
               {/* Avatar */}
-              <View className="w-16 h-16 rounded-full bg-primary items-center justify-center mr-4">
-                <Text className="text-background font-primary-bold text-2xl">
-                  {user?.full_name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
-                </Text>
+              <View className="w-16 h-16 rounded-full bg-black items-center justify-center mr-4">
+                <FontAwesome5 name="user-astronaut" size={34} color={"white"} />
               </View>
               {/* User Details */}
               <View className="flex-1">
@@ -412,24 +529,14 @@ export default function Profile() {
         {!user?.is_premium && (
           <View className="bg-black px-6 py-5 mb-6 rounded-2xl border-2 border-secondary/50">
 
-            {/* Badge */}
-            <View className="flex-row items-center justify-center mb-4">
-              <View className="bg-primary/20 px-3 py-1 rounded-full">
-                <Text className="text-primary text-xs font-primary-bold uppercase tracking-wider">
-                  Upgrade to First Class
-                </Text>
-              </View>
-            </View>
-
             {/* Title */}
             <Text className="text-white text-center font-primary-bold text-2xl mb-1">
               Unlock Your Full Potential
             </Text>
 
             {/* Subtext */}
-            <Text className="text-gray-400 text-center text-sm mb-4 font-primary leading-relaxed">
-              Access 3D space travel, unlimited recurring tasks, detailed weekly stats,
-              and premium sounds.
+            <Text className="text-gray-200 text-center text-sm mb-4 font-primary leading-relaxed">
+              Access 3D space travel, unlimited recurring tasks and detailed weekly stats.
             </Text>
 
             {/* CTA Button */}
@@ -583,9 +690,36 @@ export default function Profile() {
           </View>
         )}
 
+        {/* __DEV__ */}
+        {__DEV__ && <View className='pb-4'>
+          <Text className='text-lg font-primary-bold text-white mb-4'>DEV</Text>
+
+          <TouchableOpacity
+            onPress={handleSeedDemoData}
+            className="bg-card rounded-2xl p-4 mb-3 border border-secondary/40"
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <Ionicons name="flask-outline" size={24} color="#a855f7" />
+                <View>
+                  <Text className="font-primary-semibold text-base text-white">
+                    Generate sample data
+                  </Text>
+                  <Text className="text-gray-400 text-xs font-primary-medium mt-0.5">
+                    Add demo tasks and sessions.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>}
+
         {/* Actions Items */}
         <View className="pb-4">
           <Text className="text-lg font-primary-bold text-white mb-4">Actions</Text>
+
+          {/* Daily notification */}
           <TouchableOpacity
             onPress={openNotificationsSheet}
             className="bg-card rounded-2xl p-4 mb-3"
@@ -599,7 +733,10 @@ export default function Profile() {
                 </Text>
               </View>
               <View className="flex flex-row gap-x-2 items-center">
-                <View className={`w-2 h-2 rounded-full ${user?.notification_enabled ? 'bg-green-500' : 'bg-gray-500'}`} />
+                <View
+                  className={`w-2 h-2 rounded-full ${user?.notification_enabled ? 'bg-green-500' : 'bg-gray-500'
+                    }`}
+                />
                 <Text className="text-white font-primary-regular">
                   {user?.notification_enabled ? 'ON' : 'OFF'}
                 </Text>
@@ -607,7 +744,31 @@ export default function Profile() {
             </View>
           </TouchableOpacity>
 
-
+          {/* Block apps during focus */}
+          <TouchableOpacity
+            onPress={() => blockAppsSheetRef.current?.expand()}
+            className="bg-card rounded-2xl p-4 mb-3"
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <MaterialCommunityIcons name="focus-field" size={24} color="white" />
+                {/* <Ionicons name="shield-outline" size={24} color="white" /> */}
+                <Text className="font-primary-semibold text-base text-white">
+                  Block apps during focus
+                </Text>
+              </View>
+              <View className="flex flex-row gap-x-2 items-center">
+                <View
+                  className={`w-2 h-2 rounded-full ${isBlockingAppsEnabled ? 'bg-green-500' : 'bg-gray-500'
+                    }`}
+                />
+                <Text className="text-white font-primary-regular">
+                  {isBlockingAppsEnabled ? 'ON' : 'OFF'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Menu Items */}
@@ -749,6 +910,12 @@ export default function Profile() {
         bottomSheetRef={notificationsSheetRef}
         onSave={handleSaveNotificationSettings}
         isSaving={isSavingNotificationSettings}
+      />
+
+      <BlockAppsBottomSheet
+        bottomSheetRef={blockAppsSheetRef}
+        isEnabled={isBlockingAppsEnabled}
+        onChangeEnabled={handleChangeBlockAppsEnabled}
       />
 
     </SafeAreaView>

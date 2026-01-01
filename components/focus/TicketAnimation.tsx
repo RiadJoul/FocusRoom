@@ -1,4 +1,7 @@
+import { useListStore } from '@/lib/stores/listStore';
 import { Task } from '@/lib/stores/taskStore';
+import { useUserStore } from '@/lib/stores/userStore';
+import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect } from 'react';
 import { Modal, Text, View } from 'react-native';
@@ -12,9 +15,6 @@ import Animated, {
   withTiming
 } from 'react-native-reanimated';
 import { PlanetTrip } from './PlanetTrips';
-import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useListStore } from '@/lib/stores/listStore';
-import { useUserStore } from '@/lib/stores/userStore';
 
 interface TicketAnimationProps {
   visible: boolean;
@@ -27,6 +27,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
   const scale = useSharedValue(0.3);
   const opacity = useSharedValue(0);
   const cutProgress = useSharedValue(0);
+  const cutStartProgress = useSharedValue(0);
   const scissorsX = useSharedValue(0);
   const leftPieceOffsetX = useSharedValue(0);
   const leftPieceOffsetY = useSharedValue(0);
@@ -45,29 +46,26 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
   const user = useUserStore((state) => state.user);
 
+  // Snapshot the current time and compute the expected arrival
+  // based on the trip duration (in minutes).
+  const now = new Date();
+  // `trip.duration` is in seconds (see PlanetTrips.ts),
+  // so convert to milliseconds when computing the arrival time.
+  const arrival = new Date(now.getTime() + (trip.duration || 0) * 1000);
+
   useEffect(() => {
     if (visible) {
-      // Ticket appears
-      opacity.value = withTiming(1, { duration: 300 });
-      scale.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.back(1.5)) });
+      // Ticket simply fades/scales in – no auto-cut tutorial animation.
+      opacity.value = withTiming(1, { duration: 220 });
+      scale.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
 
-      // Hint animation: scissors glide and partial cut, then reset
       cutProgress.value = 0;
       cutLineOpacity.value = 1;
       perforationOpacity.value = 1;
       scissorsX.value = 0;
-      const hintCut = 0.7;
-      const hintDistance = 220;
-
-      cutProgress.value = withSequence(
-        withTiming(hintCut, { duration: 900, easing: Easing.out(Easing.cubic) }),
-        withTiming(0, { duration: 500, easing: Easing.in(Easing.cubic) })
-      );
-
-      scissorsX.value = withSequence(
-        withTiming(hintDistance, { duration: 900, easing: Easing.out(Easing.cubic) }),
-        withTiming(0, { duration: 500, easing: Easing.in(Easing.cubic) })
-      );
+      rightPieceOffsetX.value = 0;
+      rightPieceOffsetY.value = 0;
+      rightPieceRotate.value = 0;
     } else {
       // Reset values
       scale.value = 0.3;
@@ -89,31 +87,35 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
     // Ticket halves drift apart and fall with a subtle rotation
     cutLineOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
     perforationOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
-    leftPieceOffsetX.value = withTiming(-40, { duration: 600, easing: Easing.out(Easing.cubic) });
-    leftPieceOffsetY.value = withTiming(40, { duration: 600, easing: Easing.out(Easing.quad) });
-    leftPieceRotate.value = withTiming(-6, { duration: 600, easing: Easing.out(Easing.cubic) });
-
-    rightPieceOffsetX.value = withTiming(40, { duration: 600, easing: Easing.out(Easing.cubic) });
-    rightPieceOffsetY.value = withTiming(70, { duration: 650, easing: Easing.out(Easing.quad) }, (finished) => {
+    // Only the bottom / stub piece moves away like a sheet of paper falling.
+    rightPieceOffsetX.value = withTiming(42, { duration: 600, easing: Easing.out(Easing.cubic) });
+    rightPieceOffsetY.value = withTiming(48, { duration: 650, easing: Easing.out(Easing.quad) }, (finished) => {
       if (finished) {
         runOnJS(onAnimationComplete)();
       }
     });
-    rightPieceRotate.value = withTiming(6, { duration: 600, easing: Easing.out(Easing.cubic) });
+    rightPieceRotate.value = withTiming(5, { duration: 600, easing: Easing.out(Easing.cubic) });
   };
 
   const panGesture = Gesture.Pan()
+    .onBegin(() => {
+      // Remember current cut so the user can continue a partial tear.
+      cutStartProgress.value = cutProgress.value;
+    })
     .onUpdate((event) => {
-      const progress = Math.max(0, Math.min(1, event.translationX / 300));
+      const progress = Math.max(
+        0,
+        Math.min(1, cutStartProgress.value + event.translationX / 300)
+      );
       cutProgress.value = progress;
       scissorsX.value = event.translationX;
-      
+
       if (progress > 0.1 && progress < 0.9) {
         runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
       }
     })
     .onEnd(() => {
-      // Require almost full swipe to truly "tear" the ticket
+      // Require almost full swipe to truly "tear" the ticket.
       if (cutProgress.value > 0.95) {
         // Cut completed!
         runOnJS(Haptics.notificationAsync)(Haptics.NotificationFeedbackType.Success);
@@ -129,8 +131,12 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
             runOnJS(handleCutComplete)();
           }
         });
+      } else if (cutProgress.value > 0.5) {
+        // The ticket stays partially torn – don't snap back.
+        // Give a tiny easing so it feels natural.
+        cutProgress.value = withTiming(cutProgress.value, { duration: 150 });
       } else {
-        // Snap back
+        // Not far enough: snap back to intact ticket.
         cutProgress.value = withTiming(0, { duration: 300 });
         scissorsX.value = withTiming(0, { duration: 300 });
       }
@@ -152,43 +158,28 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
     opacity: perforationOpacity.value,
   }));
 
+  // Top / main part stays anchored; no movement while cutting.
   const leftPartStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX:
-          -cutProgress.value * 4 - // tiny bend for most of the swipe
-          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 36 + // real tear near the end
-          leftPieceOffsetX.value,
-      },
-      { translateY: leftPieceOffsetY.value },
-      {
-        rotate: `${
-          -cutProgress.value * 1.5 - // gentle tilt
-          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 4 + // stronger tilt near full tear
-          leftPieceRotate.value
-        }deg`,
-      },
-    ],
+    transform: [],
   }));
 
-  const rightPartStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX:
-          cutProgress.value * 4 + // tiny bend for most of the swipe
-          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 36 + // real tear near the end
-          rightPieceOffsetX.value,
-      },
-      { translateY: rightPieceOffsetY.value },
-      {
-        rotate: `${
-          cutProgress.value * 1.5 + // gentle tilt
-          Math.max(0, (cutProgress.value - 0.7) / 0.3) * 4 + // stronger tilt near full tear
-          rightPieceRotate.value
-        }deg`,
-      },
-    ],
-  }));
+  const rightPartStyle = useAnimatedStyle(() => {
+    const t = cutProgress.value;
+    // Paper starts to sag from the cut edge as soon as you begin cutting.
+    // We keep the hinge visually on the left (near the perforation) by
+    // mostly dropping + rotating, without sliding to the right.
+    const easedDrop = Math.max(0, Math.min(1, t)); // drop exactly in proportion to how much is cut
+
+    return {
+      transform: [
+        { translateX: rightPieceOffsetX.value },
+        // Vertical drop that grows with how much you've cut
+        { translateY: easedDrop * 32 + rightPieceOffsetY.value },
+        // Slight counter‑clockwise tilt so the left edge feels like it's falling first
+        { rotate: `${-easedDrop * 7 + rightPieceRotate.value}deg` },
+      ],
+    };
+  });
 
   const scissorsStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: scissorsX.value }],
@@ -213,125 +204,137 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
         <GestureDetector gesture={panGesture}>
           <Animated.View style={ticketStyle} className="w-full max-w-md mx-auto">
-          {/* Ticket Container with Shadow */}
-          <View 
-            style={{
-              backgroundColor: 'transparent',
-              borderRadius: 20,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 20 },
-              shadowOpacity: 0.3,
-              shadowRadius: 30,
-              elevation: 20,
-            }}
-          >
-            {/* Decorative Notches */}
-            <View style={{ position: 'absolute', left: -8, top: '50%', marginTop: -8, width: 16, height: 16, backgroundColor: '#000', borderRadius: 8, zIndex: 10 }} />
-            <View style={{ position: 'absolute', right: -8, top: '50%', marginTop: -8, width: 16, height: 16, backgroundColor: '#000', borderRadius: 8, zIndex: 10 }} />
-            
-            {/* Top Part - Main Ticket Info */}
-            <Animated.View style={leftPartStyle}>
-              {/* Header Gradient Bar */}
-              <View className={`${user?.is_premium ? 'bg-purple-800' : 'bg-black'} rounded-t-2xl px-6 py-4`}>
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center">
-                    <View>
-                      <Text className="text-white/70 font-primary-medium text-xs tracking-widest">FOCUSROOM AIRWAYS</Text>
-                      <Text className="text-white font-primary-bold text-lg">BOARDING PASS</Text>
+            {/* Ticket Container with Shadow */}
+            <View
+              style={{
+                backgroundColor: 'transparent',
+                borderRadius: 20,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 20 },
+                shadowOpacity: 0.3,
+                shadowRadius: 30,
+                elevation: 20,
+              }}
+            >
+              {/* Decorative Notches */}
+              <View style={{ position: 'absolute', left: -8, top: '50%', marginTop: -58, width: 16, height: 64, backgroundColor: '#000', borderRadius: 32, zIndex: 10 }} />
+              <View style={{ position: 'absolute', right: -8, top: '50%', marginTop: -58, width: 16, height: 64, backgroundColor: '#000', borderRadius: 32, zIndex: 10 }} />
+
+              {/* Top Part - Main Ticket Info */}
+              <Animated.View style={leftPartStyle}>
+                {/* Header Gradient Bar */}
+                <View className={`bg-[#141514] rounded-t-2xl px-6 py-4`}>
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                      <View>
+                        <Text className="text-white/70 font-primary-medium text-xs tracking-widest">FOCUSROOM AIRWAYS</Text>
+                        <Text className="text-white font-primary-bold text-lg">BOARDING PASS</Text>
+                      </View>
+                    </View>
+                    {/* make this view glowing */}
+                    {user?.is_premium && (
+                      <View style={{
+                        backgroundColor: '#A78BFA',
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 6,
+                        shadowColor: '#A78BFA',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0.7,
+                        shadowRadius: 10,
+                        elevation: 10,
+                      }}>
+                        <Text className="text-white font-primary-bold text-sm tracking-wider">FIRST CLASS</Text>
+                      </View>
+                    )}
+                    {!user?.is_premium && (
+                      <View className="bg-white/20 px-3 py-1.5 rounded-lg">
+                        <Text className="text-white font-primary-bold text-sm tracking-wider">ECONOMY</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* Main Info Section */}
+                <View className="p-6 bg-[#141514]">
+                  {/* Route */}
+                  <View className="flex-row items-center justify-between mb-6">
+                    <View className="flex-1">
+                      <Text className="text-white/70 font-primary-medium text-xs tracking-wider mb-1.5">FROM</Text>
+                      <Text className="text-white font-primary-bold text-3xl tracking-tight">{trip.from}</Text>
+                    </View>
+
+
+
+                    <View className="flex-1 items-end">
+                      <Text className="text-white/70 font-primary-medium text-xs tracking-wider mb-1.5">TO</Text>
+                      <Text className="text-white font-primary-bold text-3xl tracking-tight">{trip.to}</Text>
                     </View>
                   </View>
-                  {/* make this view glowing */}
-                  {user?.is_premium && (
-                    <View style={{
-                      backgroundColor: '#A78BFA',
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      borderRadius: 6,
-                      shadowColor: '#A78BFA',
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.7, 
-                      shadowRadius: 10,
-                      elevation: 10,
-                    }}>
-                      <Text className="text-white font-primary-bold text-sm tracking-wider">FIRST CLASS</Text>
+
+                  {/* Flight Details Grid */}
+                  <View className="flex-row justify-between mb-5">
+                    <View className='flex flex-col'>
+                      <Text className='text-white font-primary-semibold'>
+                        {/* current time */}
+                        {now.toLocaleString('en-US', {
+                          hour: '2-digit',
+                          minute: 'numeric',
+                          hour12: true
+                        })}
+                      </Text>
+                      <Text className='text-white text-lg font-primary-regular'>
+                        {/* current date */}
+                        {now.toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: '2-digit'
+                        })}
+                      </Text>
                     </View>
-                  )}
-                  {!user?.is_premium && (
-                  <View className="bg-white/20 px-3 py-1.5 rounded-lg">
-                    <Text className="text-white font-primary-bold text-sm tracking-wider">ECONOMY</Text>
-                  </View>
-                  )}
-                </View>
-              </View>
-
-              {/* Main Info Section */}
-              <View className="p-6 bg-white">
-                {/* Route */}
-                <View className="flex-row items-center justify-between mb-6">
-                  <View className="flex-1">
-                    <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1.5">FROM</Text>
-                    <Text className="text-gray-900 font-primary-bold text-3xl tracking-tight">{trip.from}</Text>
-                  </View>
-                  
-                  <View className="px-4">
-                    <MaterialCommunityIcons name="rocket-launch-outline" size={54} color="black" />
-                  </View>
-                  
-                  <View className="flex-1 items-end">
-                    <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1.5">TO</Text>
-                    <Text className="text-gray-900 font-primary-bold text-3xl tracking-tight">{trip.to}</Text>
+                    <View className='flex flex-col'>
+                      <Text className='text-white font-primary-semibold'>
+                        {/* calculate end time based on trip.duration (minutes) */}
+                        {arrival.toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true,
+                        })}
+                      </Text>
+                      <Text className='text-white text-lg font-primary-regular'>
+                        {/* calculate end date based on trip.duration (minutes) */}
+                        {arrival.toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: '2-digit'
+                        })}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-
-                {/* Flight Details Grid */}
-                <View className="flex-row border-t border-gray-200 pt-4">
-                  <View className="flex-1 pr-3">
-                    <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1.5">TRIP</Text>
-                    <Text className="text-gray-900 font-primary-bold text-base">{trip.description}</Text>
-                  </View>
-                  <View className="flex-1 pl-3 border-l border-gray-200">
-                    <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1.5">DURATION</Text>
-                    <Text className="text-gray-900 font-primary-bold text-base">
-                      {Math.floor(trip.duration / 60)} min
-                    </Text>
-                  </View>
-                  <View className="flex-1 pl-3 border-l border-gray-200">
-                    <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1.5">GATE</Text>
-                    <Text className="text-gray-900 font-primary-bold text-base">A{Math.floor(Math.random() * 20) + 1}</Text>
-                  </View>
-                </View>
-              </View>
-            </Animated.View>
-
-            {/* Perforated Cut Line */}
-            <View className="relative" style={{ height: 1 }}>
-              <Animated.View
-                style={[{
-                  flexDirection: 'row',
-                  justifyContent: 'space-evenly',
-                  backgroundColor: 'transparent',
-                  paddingVertical: 0,
-                }, perforationStyle]}
-              >
-                {[...Array(25)].map((_, i) => (
-                  <View key={i} style={{ width: 8, height: 1, backgroundColor: '#D1D5DB' }} />
-                ))}
               </Animated.View>
-              <Animated.View
-                style={[cutLineStyle, { 
-                  backgroundColor: '#000000', 
-                  height: 3,
-                  position: 'absolute',
-                  left: 0,
-                  top: -1,
-                }]}
-              />
-            </View>
 
-            {/* Bottom Part - Stub */}
-            <Animated.View style={rightPartStyle}>
-              <View className="p-6 bg-gray-50" style={{ borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }}>
-                {/* <View className="flex-row items-center justify-between mb-4">
+              {/* Perforated Cut Line */}
+              <View className="relative" style={{ height: 1 }}>
+                <Animated.View
+                  style={[{
+                    flexDirection: 'row',
+                    justifyContent: 'space-evenly',
+                    backgroundColor: 'transparent',
+                    paddingVertical: 0,
+                  }, perforationStyle]}
+                >
+                  {[...Array(25)].map((_, i) => (
+                    <View key={i} style={{ width: 8, height: 1, backgroundColor: '#141514' }} />
+                  ))}
+                </Animated.View>
+
+              </View>
+
+              {/* Bottom Part - Stub */}
+              <Animated.View style={rightPartStyle}>
+                <View className="p-6 bg-[#141514]" style={{ borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }}>
+                  {/* <View className="flex-row items-center justify-between mb-4">
                   <View>
                     <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1">PASSENGER</Text>
                     <Text className="text-gray-900 font-primary-bold text-base">Space Traveler</Text>
@@ -341,80 +344,47 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                   </View>
                 </View> */}
 
-                <View className="">
-                  <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-3">MISSION OBJECTIVES ({tasks.length})</Text>
-                  {tasks.slice(0, 3).map((task, index) => (
-                    <View key={task.id} className="flex-row items-start mb-2">
-                      <View style={{ 
-                        width: 6, 
-                        height: 6, 
-                        borderRadius: 3, 
-                        backgroundColor: '#6366F1',
-                        marginTop: 5,
-                        marginRight: 8 
-                      }} />
-                      <Text className="text-gray-700 font-primary-medium text-sm flex-1" numberOfLines={1}>
-                        {task.title} 
-                      </Text>
-                    </View>
-                  ))}
-                  {tasks.length > 3 && (
-                    <Text className="text-gray-400 font-primary-medium text-xs mt-1">
-                      +{tasks.length - 3} more objectives
-                    </Text>
-                  )}
-                </View>
-
-                {/* Barcode */}
-                <View className="mt-4 pt-4 border-t border-gray-200">
-                  <View className="flex-row" style={{ height: 40 }}>
-                    {[...Array(30)].map((_, i) => (
-                      <View 
-                        key={i} 
-                        style={{ 
-                          flex: 1, 
-                          backgroundColor: i % 3 === 0 ? '#1F2937' : '#9CA3AF',
-                          marginHorizontal: 1 
-                        }} 
-                      />
+                  <View className="">
+                    <Text className="text-white font-primary-medium text-xs tracking-wider mb-3">MISSION OBJECTIVES ({tasks.length})</Text>
+                    {tasks.slice(0, 3).map((task, index) => (
+                      <View key={task.id} className="flex-row items-start mb-2">
+                        <View className='w-1.5 h-1.5 rounded-full bg-secondary mr-2 mt-2'/>
+                        <Text className="text-white/90 font-primary-medium text-sm flex-1" numberOfLines={1}>
+                          {task.title}
+                        </Text>
+                      </View>
                     ))}
+                    {tasks.length > 3 && (
+                      <Text className="text-gray-400 font-primary-medium text-xs mt-1">
+                        +{tasks.length - 3} more objectives
+                      </Text>
+                    )}
                   </View>
-                  <Text className="text-gray-400 font-primary-medium text-xs text-center mt-2 tracking-widest">
-                    TKT-{trip.from.slice(0, 2)}{trip.to.slice(0, 2)}-{Date.now().toString().slice(-6)}
-                  </Text>
-                </View>
-              </View>
-            </Animated.View>
-          </View>
 
-          {/* Enhanced Scissors Icon */}
-          <Animated.View
-            style={[
-              scissorsStyle,
-              {
-                position: 'absolute',
-                left: -20,
-                top: '50%',
-                marginTop: -16,
-              }
-            ]}
-          >
-            <View style={{
-              backgroundColor: 'white',
-              borderRadius: 20,
-              padding: 8,
-              shadowColor: '#EF4444',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.3,
-              shadowRadius: 8,
-              elevation: 5,
-            }}>
-              <Text className="text-4xl">
-                <AntDesign name="scissor" size={24} color="black" />
-              </Text>
+                  {/* Barcode */}
+                  <View className="mt-4 pt-4">
+                    <View className="flex-row" style={{ height: 50 }}>
+                      {[...Array(30)].map((_, i) => (
+                        <View
+                          key={i}
+                          style={{
+                            flex: 1,
+                            backgroundColor: '#ffffff',
+                            marginHorizontal: i % 2 === 0 ? 5 : 1,
+                          }}
+                        />
+                      ))}
+                    </View>
+                    <Text className="text-white font-primary-medium text-xs text-center mt-3 tracking-widest">
+                      TKT-{trip.from.slice(0, 2)}{trip.to.slice(0, 2)}-{Date.now().toString().slice(-6)}
+                    </Text>
+                  </View>
+                </View>
+              </Animated.View>
             </View>
+
+
           </Animated.View>
-        </Animated.View>
         </GestureDetector>
       </View>
     </Modal>

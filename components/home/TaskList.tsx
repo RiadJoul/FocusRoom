@@ -1,22 +1,16 @@
 import { TaskList as TaskListType } from '@/lib/stores/listStore';
 import { Task } from '@/lib/stores/taskStore';
-import { formatDueDate, parseLocalDateKey } from '@/lib/utils/dateUtils';
+import { formatDueDate, formatLocalDateKey, parseLocalDateKey } from '@/lib/utils/dateUtils';
 import { getPriorityColor } from '@/lib/utils/taskUtils';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import React, { useMemo } from 'react';
-import { Text, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import React, { useMemo, useState } from 'react';
+import { ActionSheetIOS, Platform, Text, TouchableOpacity, View, Alert } from 'react-native';
 import Animated, {
-  Extrapolation,
-  interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
-  withSequence,
-  withSpring,
-  withTiming
+  withTiming,
 } from 'react-native-reanimated';
 
 interface TaskListProps {
@@ -24,27 +18,37 @@ interface TaskListProps {
   lists: TaskListType[];
   onToggleComplete: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
+  onMoveTask: (taskId: string, newDate: string) => void;
 }
 
 interface TaskItemProps {
   task: Task;
+  list: {
+    title: string;
+    icon: string;
+    color: string;
+  };
   isLastItem: boolean;
   onToggleComplete: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
+  onMoveTask: (taskId: string, newDate: string) => void;
 }
 
-function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItemProps) {
-  const translateX = useSharedValue(0);
-  const opacity = useSharedValue(1);
-  const scale = useSharedValue(1);
-  const isCompleting = useSharedValue(false);
-  const isDeleting = useSharedValue(false);
+function TaskItem({ task, list, isLastItem, onToggleComplete, onDeleteTask, onMoveTask }: TaskItemProps) {
+  const [isAnimatingComplete, setIsAnimatingComplete] = useState(false);
+  const completeAnim = useSharedValue(0);
 
-  const SWIPE_THRESHOLD = 100;
-
-  const handleComplete = () => {
+  const handleToggleCompletePress = () => {
+    if (isAnimatingComplete) return;
+    // In this list we only show incomplete tasks, so we treat this as a one‑way complete action.
+    setIsAnimatingComplete(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onToggleComplete(task.id);
+    completeAnim.value = withTiming(1, { duration: 800 }, (finished) => {
+      if (finished) {
+        runOnJS(onToggleComplete)(task.id);
+        runOnJS(setIsAnimatingComplete)(false);
+      }
+    });
   };
 
   const handleDelete = () => {
@@ -52,197 +56,173 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
     onDeleteTask(task.id);
   };
 
-  const handleNudge = () => {
-    // Light haptic feedback for the nudge
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
+  const handleMorePress = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  const panGesture = Gesture.Pan()
-    .onUpdate((event) => {
-      // Allow right swipe for incomplete tasks (complete)
-      if (task.status !== 'completed' && event.translationX > 0) {
-        translateX.value = event.translationX;
-        
-        // Scale effect based on swipe progress
-        const progress = Math.min(event.translationX / SWIPE_THRESHOLD, 1);
-        scale.value = 1 - progress * 0.05;
+    const taskDate = task.due_date ? parseLocalDateKey(task.due_date) : null;
+    if (!taskDate) {
+      // For tasks without a due date, just offer delete for now
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options: ['Cancel', 'Delete'],
+            destructiveButtonIndex: 1,
+            cancelButtonIndex: 0,
+          },
+          (buttonIndex) => {
+            if (buttonIndex === 1) {
+              handleDelete();
+            }
+          }
+        );
+      } else {
+        Alert.alert('Task options', undefined, [
+          { text: 'Delete', style: 'destructive' as const, onPress: handleDelete },
+          { text: 'Cancel', style: 'cancel' as const },
+        ]);
       }
-      // Allow left swipe for all tasks (delete)
-      else if (event.translationX < 0) {
-        translateX.value = event.translationX;
-        
-        // Scale effect based on swipe progress
-        const progress = Math.min(Math.abs(event.translationX) / SWIPE_THRESHOLD, 1);
-        scale.value = 1 - progress * 0.05;
-      }
-    })
-    .onEnd((event) => {
-      // Right swipe - Complete task
-      if (event.translationX > SWIPE_THRESHOLD && task.status !== 'completed' && !isCompleting.value) {
-        isCompleting.value = true;
-        translateX.value = withTiming(400, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        scale.value = withTiming(0.8, { duration: 300 }, () => {
-          runOnJS(handleComplete)();
-        });
-      }
-      // Left swipe - Delete task
-      else if (event.translationX < -SWIPE_THRESHOLD && !isDeleting.value) {
-        isDeleting.value = true;
-        translateX.value = withTiming(-400, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        scale.value = withTiming(0.8, { duration: 300 }, () => {
-          runOnJS(handleDelete)();
-        });
-      }
-      // Spring back to original position
-      else {
-        translateX.value = withSpring(0, {
-          damping: 15,
-          stiffness: 150,
-        });
-        scale.value = withSpring(1, {
-          damping: 15,
-          stiffness: 150,
-        });
-      }
-    });
-
-  const tapGesture = Gesture.Tap().onEnd(() => {
-    if (task.status === 'completed') {
       return;
     }
 
-    // Nudge animation to hint that user should swipe right
-    runOnJS(handleNudge)();
-    translateX.value = withSequence(
-      // Move to the right
-      withSpring(30, {
-        damping: 10,
-        stiffness: 200,
-      }),
-      // Hold for 100ms
-      withDelay(100,
-        // Spring back to original position
-        withSpring(0, {
-          damping: 15,
-          stiffness: 150,
-        })
-      )
-    );
-  });
-
-  const composedGestures = Gesture.Simultaneous(panGesture, tapGesture);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: translateX.value },
-        { scale: scale.value },
-      ],
-      opacity: opacity.value,
-    };
-  });
-
-  const checkIconStyle = useAnimatedStyle(() => {
-    const progress = interpolate(
-      translateX.value,
-      [0, SWIPE_THRESHOLD],
-      [0, 1],
-      Extrapolation.CLAMP
+    const diffDays = Math.round(
+      (taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    return {
-      opacity: progress,
-      transform: [
-        { scale: interpolate(progress, [0, 1], [0.5, 1.2]) },
-      ],
-    };
-  });
+    const moveToTodayDate = formatLocalDateKey(today);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const moveToTomorrowDate = formatLocalDateKey(tomorrow);
 
-  const deleteIconStyle = useAnimatedStyle(() => {
-    const progress = interpolate(
-      translateX.value,
-      [-SWIPE_THRESHOLD, 0],
-      [1, 0],
-      Extrapolation.CLAMP
-    );
+    const options: { label: string; action: () => void }[] = [];
 
-    return {
-      opacity: progress,
-      transform: [
-        { scale: interpolate(progress, [0, 1], [0.5, 1.2]) },
-      ],
-    };
-  });
+    if (diffDays === -1) {
+      options.push({
+        label: 'Move to Today',
+        action: () => onMoveTask(task.id, moveToTodayDate),
+      });
+      options.push({
+        label: 'Move to Tomorrow',
+        action: () => onMoveTask(task.id, moveToTomorrowDate),
+      });
+    } else if (diffDays === 0) {
+      options.push({
+        label: 'Move to Tomorrow',
+        action: () => onMoveTask(task.id, moveToTomorrowDate),
+      });
+    } else if (diffDays === 1) {
+      options.push({
+        label: 'Move to Today',
+        action: () => onMoveTask(task.id, moveToTodayDate),
+      });
+    }
 
-  const backgroundStyle = useAnimatedStyle(() => {
-    const progress = interpolate(
-      translateX.value,
-      [0, SWIPE_THRESHOLD],
-      [0, 1],
-      Extrapolation.CLAMP
-    );
+    options.push({
+      label: 'Delete',
+      action: handleDelete,
+    });
 
-    return {
-      opacity: progress * 1,
-    };
-  });
+    if (Platform.OS === 'ios') {
+      const optionLabels = ['Cancel', ...options.map((o) => o.label)];
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: optionLabels,
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: optionLabels.length - 1,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) return;
+          const chosen = options[buttonIndex - 1];
+          chosen?.action();
+        }
+      );
+    } else {
+      Alert.alert(
+        'Task options',
+        undefined,
+        [
+          ...options.map((o, index) => ({
+            text: o.label,
+            onPress: o.action,
+            style: (index === options.length - 1 ? ('destructive' as const) : ('default' as const)),
+          })),
+          { text: 'Cancel', style: 'cancel' as const },
+        ]
+      );
+    }
+  };
 
-  const deleteBackgroundStyle = useAnimatedStyle(() => {
-    const progress = interpolate(
-      translateX.value,
-      [-SWIPE_THRESHOLD, 0],
-      [1, 0],
-      Extrapolation.CLAMP
-    );
+  const checkIconAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: completeAnim.value,
+    transform: [
+      {
+        scale: 0.8 + 0.4 * completeAnim.value,
+      },
+    ],
+  }));
 
-    return {
-      opacity: progress * 1,
-    };
-  });
+  const fillCircleAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: completeAnim.value,
+  }));
+
+  const normalTextAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: 1 - completeAnim.value,
+  }));
+
+  const completedTextAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: completeAnim.value,
+  }));
 
   return (
     <View className={isLastItem ? '' : 'mb-3'}>
-      {/* Complete Background Indicator (Right Swipe) */}
-      <Animated.View 
-        style={backgroundStyle}
-        className="absolute left-0 top-0 bottom-0 w-24 bg-primary rounded-2xl flex items-center justify-center"
-      >
-        <Animated.View style={checkIconStyle}>
-          <Ionicons name="checkmark-sharp" size={24} color="black" />
-        </Animated.View>
-      </Animated.View>
-
-      {/* Delete Background Indicator (Left Swipe) */}
-      <Animated.View 
-        style={deleteBackgroundStyle}
-        className="absolute right-0 top-0 bottom-0 w-24 bg-red-500 rounded-2xl flex items-center justify-center"
-      >
-        <Animated.View style={deleteIconStyle}>
-          <Ionicons name="trash-outline" size={24} color="black" />
-        </Animated.View>
-      </Animated.View>
-
       {/* Task Card */}
-      <GestureDetector gesture={composedGestures}>
-        <Animated.View
-          style={animatedStyle}
-          className={`bg-card rounded-2xl p-4 flex-row items-center`}
-        >
-          {/* Right arrow for icon */}
-          <View className="mr-4">
-            <Ionicons name="arrow-forward-circle" size={24} color="#9CA3AF" />
-          </View>
+      <View className="p-4 flex-row items-center">
+          {/* Completion ring */}
+          <TouchableOpacity
+            onPress={handleToggleCompletePress}
+            activeOpacity={0.8}
+            className="mr-4"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <View
+              style={{
+                borderColor: '#9CA3AF',
+                borderWidth: 2,
+              }}
+              className={`w-6 h-6 rounded-lg items-center justify-center overflow-hidden`}
+            >
+              <Animated.View
+                style={[fillCircleAnimatedStyle, {backgroundColor: list.color || '#9CA3AF'}]}
+                className="absolute inset-0"
+              />
+              <Animated.View style={checkIconAnimatedStyle}>
+                <Ionicons name="checkmark" size={16} color="white" />
+              </Animated.View>
+            </View>
+          </TouchableOpacity>
           
           {/* Task Content */}
           <View className="flex-1">
-            <Text className={`font-primary-semibold text-base leading-tight text-white`}>
-              {task.title}
-            </Text>
+            <View>
+              <Animated.Text
+                style={normalTextAnimatedStyle}
+                className="font-primary-semibold text-base leading-tight text-white"
+              >
+                {task.title}
+              </Animated.Text>
+              <Animated.Text
+                style={[
+                  completedTextAnimatedStyle,
+                  { position: 'absolute', left: 0, right: 0, top: 0 },
+                ]}
+                className="font-primary-semibold text-base leading-tight text-gray-500 line-through"
+              >
+                {task.title}
+              </Animated.Text>
+            </View>
             <View className="flex-row items-center mt-2">
               {/* Priority Badge */}
-              <View className={`flex-row items-center px-2 py-1 rounded-md mr-2 ${getPriorityColor(task.priority)}`}>
+              <View className={`flex-row items-center py rounded-md mr-2 ${getPriorityColor(task.priority)}`}>
                 <Text className="text-xs font-primary-medium capitalize" style={{
                   color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
                 }}>
@@ -250,23 +230,20 @@ function TaskItem({ task, isLastItem, onToggleComplete, onDeleteTask }: TaskItem
                 </Text>
               </View>
               
-              {/* Due Date */}
-              {task.due_date && (
-                <View className="flex-row items-center">
-                  <Text className="flex items-center text-xs font-primary-medium text-gray-500">
-                    <Ionicons name='time-outline'/> {formatDueDate(parseLocalDateKey(task.due_date))}
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
-        </Animated.View>
-      </GestureDetector>
+          <TouchableOpacity
+            onPress={handleMorePress}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
     </View>
   );
 }
 
-export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask }: TaskListProps) {
+export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask, onMoveTask }: TaskListProps) {
   // Group tasks by list_id
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, Task[]>();
@@ -298,8 +275,8 @@ export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask }: TaskL
           <View key={listId} className={groupIndex > 0 ? 'mt-6' : ''}>
             {/* List Header */}
             <View className="mb-3 flex-row items-center gap-2">
-              <Ionicons name={listInfo.icon as any} size={16} color={listInfo.color} />
-              <Text style={{ color: listInfo.color }} className={`font-primary-semibold text-sm uppercase tracking-wider`}>
+              <Ionicons name={listInfo.icon as any} size={18} color={listInfo.color} />
+              <Text style={{ color: listInfo.color }} className={`font-primary-semibold text-base uppercase tracking-wider`}>
                 {listInfo.title} ({listTasks.length})
               </Text>
             </View>
@@ -308,10 +285,12 @@ export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask }: TaskL
             {listTasks.map((task, index) => (
               <TaskItem
                 key={task.id}
+                list={listInfo}
                 task={task}
                 isLastItem={index === listTasks.length - 1}
                 onToggleComplete={onToggleComplete}
                 onDeleteTask={onDeleteTask}
+                onMoveTask={onMoveTask}
               />
             ))}
           </View>

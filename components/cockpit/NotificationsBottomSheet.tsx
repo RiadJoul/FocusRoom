@@ -2,6 +2,7 @@ import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/botto
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Image, Linking, Text, TouchableOpacity, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 
 type NotificationBottomSheetProps = {
   isNotificationEnabled: boolean;
@@ -56,6 +57,32 @@ export function NotificationsBottomSheet({
     }
   }, [initialMinute]);
 
+  // When notifications are enabled and we have stored values,
+  // keep the wheels aligned with the saved hour/minute.
+  useEffect(() => {
+    if (!notificationEnabled) return;
+
+    if (typeof initialHour === 'number') {
+      setSelectedHour(initialHour);
+      if (hourListRef.current) {
+        hourListRef.current.scrollToOffset({
+          offset: initialHour * ITEM_HEIGHT,
+          animated: false,
+        });
+      }
+    }
+
+    if (typeof initialMinute === 'number') {
+      setSelectedMinute(initialMinute);
+      if (minuteListRef.current) {
+        minuteListRef.current.scrollToOffset({
+          offset: initialMinute * ITEM_HEIGHT,
+          animated: false,
+        });
+      }
+    }
+  }, [notificationEnabled, initialHour, initialMinute]);
+
   const animatePreviewIn = useCallback(() => {
     notificationPreviewTranslateY.setValue(40);
     notificationPreviewOpacity.setValue(0);
@@ -108,6 +135,7 @@ export function NotificationsBottomSheet({
   );
 
   const handleHourScrollEnd = (event: any) => {
+     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     const offsetY = event.nativeEvent.contentOffset.y;
     const index = Math.round(offsetY / ITEM_HEIGHT);
     const value = hours[index];
@@ -117,6 +145,7 @@ export function NotificationsBottomSheet({
   };
 
   const handleMinuteScrollEnd = (event: any) => {
+     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     const offsetY = event.nativeEvent.contentOffset.y;
     const index = Math.round(offsetY / ITEM_HEIGHT);
     const value = minutes[index];
@@ -130,6 +159,7 @@ export function NotificationsBottomSheet({
   };
 
   const handleToggleNotification = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
     const next = !notificationEnabled;
 
     // If turning ON, ensure notification permissions are granted
@@ -222,29 +252,81 @@ export function NotificationsBottomSheet({
       backdropComponent={renderBackdrop}
       onChange={handleSheetChange}
     >
-      <BottomSheetView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 }}>
+      <BottomSheetView style={{ flex: 1, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 24 }}>
         {/* Header */}
         <View className="flex-row items-center justify-between mb-4">
           <Text className="text-white text-xl font-primary-bold">Notifications</Text>
           <TouchableOpacity
             onPress={handleDonePress}
-            className={`bg-secondary/40 px-4 py-2 rounded-2xl ${isSaving ? 'opacity-60' : ''}`}
+            className={`bg-white px-4 py-2 rounded-lg ${isSaving ? 'opacity-60' : ''}`}
             activeOpacity={0.8}
             disabled={isSaving}
           >
             {isSaving ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color="#000000" />
             ) : (
-              <Text className="text-white font-primary-semibold text-base">Done</Text>
+              <Text className="text-black font-primary-semibold text-base">Save</Text>
             )}
           </TouchableOpacity>
         </View>
 
+        {/* Notification toggle */}
+        <TouchableOpacity
+          onPress={handleToggleNotification}
+          activeOpacity={0.8}
+          className={`rounded-2xl px-5 py-4 flex-row items-center justify-between border ${notificationEnabled ? 'bg-green-400/20 border-green-400' : 'bg-background border-gray-600'
+            }`}
+        >
+          <Text className="text-white font-primary-semibold">Notification</Text>
+          <View className="flex-row items-center gap-x-2">
+            {notificationEnabled && <View className="w-2 h-2 rounded-full bg-green-400" />}
+            <View style={{ width: 36, height: 18, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.Text
+                className="text-white font-primary-semibold"
+                style={{
+                  position: 'absolute',
+                  transform: [
+                    {
+                      translateX: toggleLabelValue.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-12, 0], // slide in from left when turning ON
+                      }),
+                    },
+                  ],
+                  opacity: toggleLabelValue,
+                }}
+              >
+                ON
+              </Animated.Text>
+              <Animated.Text
+                className="text-white font-primary-semibold"
+                style={{
+                  position: 'absolute',
+                  transform: [
+                    {
+                      translateX: toggleLabelValue.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 12], // slide out to right when turning ON
+                      }),
+                    },
+                  ],
+                  opacity: toggleLabelValue.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 0],
+                  }),
+                }}
+              >
+                OFF
+              </Animated.Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
         {/* Phone mockup with time picker + preview */}
-        <View className="bg-black/80 rounded-[17px] px-4 pt-3 pb-5 mb-6 border border-white/10">
+        <View className="bg-black/80 rounded-[17px] px-4 pt-3 pb-5 mt-6 border border-white/10">
           {/* Fake status bar */}
           <View className="flex-row items-center justify-between mb-3 px-1">
-            <Text className="text-white font-primary-medium text-base">00:28</Text>
+            <Text className="text-white font-primary-medium text-base">09:41</Text>
             <View className="flex-row items-center gap-x-1">
               <View className="w-12 h-5 rounded-full bg-white/10" />
               <View className="w-5 h-5 rounded-full bg-white/40" />
@@ -360,57 +442,7 @@ export function NotificationsBottomSheet({
           </Animated.View>
         </View>
 
-        {/* Notification toggle */}
-        <TouchableOpacity
-          onPress={handleToggleNotification}
-          activeOpacity={0.8}
-          className={`rounded-2xl px-5 py-4 flex-row items-center justify-between border ${notificationEnabled ? 'bg-green-400/20 border-green-400' : 'bg-background border-gray-600'
-            }`}
-        >
-          <Text className="text-white font-primary-semibold">Notification</Text>
-          <View className="flex-row items-center gap-x-2">
-            {notificationEnabled && <View className="w-2 h-2 rounded-full bg-green-400" />}
-            <View style={{ width: 36, height: 18, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
-              <Animated.Text
-                className="text-white font-primary-semibold"
-                style={{
-                  position: 'absolute',
-                  transform: [
-                    {
-                      translateX: toggleLabelValue.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-12, 0], // slide in from left when turning ON
-                      }),
-                    },
-                  ],
-                  opacity: toggleLabelValue,
-                }}
-              >
-                ON
-              </Animated.Text>
-              <Animated.Text
-                className="text-white font-primary-semibold"
-                style={{
-                  position: 'absolute',
-                  transform: [
-                    {
-                      translateX: toggleLabelValue.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 12], // slide out to right when turning ON
-                      }),
-                    },
-                  ],
-                  opacity: toggleLabelValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [1, 0],
-                  }),
-                }}
-              >
-                OFF
-              </Animated.Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+        
       </BottomSheetView>
     </BottomSheet>
   );

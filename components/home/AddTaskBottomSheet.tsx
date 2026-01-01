@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Keyboard, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { ListCreateModal } from './ListCreateModal';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
@@ -38,6 +38,7 @@ export function AddTaskBottomSheet({
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [showListCreator, setShowListCreator] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Set default list when lists change
   React.useEffect(() => {
@@ -94,12 +95,17 @@ export function AddTaskBottomSheet({
   };
 
   const handleAddTask = async () => {
-    if (!taskTitle.trim() || !selectedListId || !selectedDueDate) return;
+    if (!taskTitle.trim() || !selectedListId || !selectedDueDate || isSaving) return;
+    setIsSaving(true);
 
     const dueDateStr = formatLocalDateKey(selectedDueDate);
 
-    await onAddTask(taskTitle.trim(), selectedPriority, selectedListId, dueDateStr);
-    handleCloseBottomSheet();
+    try {
+      await onAddTask(taskTitle.trim(), selectedPriority, selectedListId, dueDateStr);
+      handleCloseBottomSheet();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSetToday = () => {
@@ -211,7 +217,7 @@ export function AddTaskBottomSheet({
                     }}
                   />
                   <Text
-                    className="font-primary-semibold text-lg"
+                    className="font-primary-semibold text-base"
                     style={{
                       color: list.color,
                       opacity: selectedListId === list.id ? 1 : 0.5,
@@ -412,7 +418,7 @@ export function AddTaskBottomSheet({
                 onPress={goToNextStep}
                 disabled={!taskTitle.trim() || !selectedListId}
                 className={`flex-1 py-4 rounded-xl items-center ${
-                  taskTitle.trim() && selectedListId ? 'bg-secondary' : 'bg-gray-800'
+                  taskTitle.trim() && selectedListId ? 'bg-white' : 'bg-white/50'
                 }`}
                 activeOpacity={0.8}
               >
@@ -431,7 +437,7 @@ export function AddTaskBottomSheet({
             <>
               <TouchableOpacity
                 onPress={goToPreviousStep}
-                className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
+                className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-700 items-center"
                 activeOpacity={0.8}
               >
                 <Text className="text-gray-400 font-primary-semibold text-base">
@@ -440,7 +446,7 @@ export function AddTaskBottomSheet({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={goToNextStep}
-                className="flex-1 py-4 rounded-xl items-center bg-secondary"
+                className="flex-1 py-4 rounded-xl items-center bg-white"
                 activeOpacity={0.8}
               >
                 <Text className="font-primary-bold text-base text-background">
@@ -464,23 +470,34 @@ export function AddTaskBottomSheet({
 
               <TouchableOpacity
                 onPress={handleAddTask}
-                disabled={!taskTitle.trim() || !selectedListId || !selectedDueDate}
+                disabled={
+                  isSaving ||
+                  !taskTitle.trim() ||
+                  !selectedListId ||
+                  !selectedDueDate
+                }
                 className={`flex-1 py-4 rounded-xl items-center ${
-                  taskTitle.trim() && selectedListId && selectedDueDate
-                    ? 'bg-secondary'
-                    : 'bg-gray-800'
+                  isSaving
+                    ? 'bg-white/60'
+                    : taskTitle.trim() && selectedListId && selectedDueDate
+                    ? 'bg-white'
+                    : 'bg-white/50'
                 }`}
                 activeOpacity={0.8}
               >
-                <Text
-                  className={`font-primary-bold text-base ${
-                    taskTitle.trim() && selectedListId && selectedDueDate
-                      ? 'text-background'
-                      : 'text-gray-600'
-                  }`}
-                >
-                  Add Task
-                </Text>
+                {isSaving ? (
+                  <ActivityIndicator color="#000000" />
+                ) : (
+                  <Text
+                    className={`font-primary-bold text-base ${
+                      taskTitle.trim() && selectedListId && selectedDueDate
+                        ? 'text-background'
+                        : 'text-gray-600'
+                    }`}
+                  >
+                    Add Task
+                  </Text>
+                )}
               </TouchableOpacity>
             </>
           )}

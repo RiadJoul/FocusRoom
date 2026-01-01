@@ -23,6 +23,7 @@ import * as Localization from 'expo-localization';
 import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications } from '@/lib/hooks/useRegisterForPushNotifications';
 import * as Notifications from 'expo-notifications';
+import { analytics, Events, Properties } from '@/lib/analytics';
 
 export default function HomeScreen() {
   const user = useUserStore((state) => state.user);
@@ -31,6 +32,8 @@ export default function HomeScreen() {
   const toggleComplete = useTaskStore((state) => state.toggleComplete);
   const addTask = useTaskStore((state) => state.addTask);
   const removeTask = useTaskStore((state) => state.removeTask);
+  const removeTasksByList = useTaskStore((state) => state.removeTasksByList);
+  const updateTask = useTaskStore((state) => state.updateTask);
   const lists = useListStore((state) => state.lists);
   const fetchLists = useListStore((state) => state.fetchLists);
   const addList = useListStore((state) => state.addList);
@@ -122,7 +125,7 @@ export default function HomeScreen() {
       ).then(r => r.json());
       const current = Application.nativeApplicationVersion;
       const latestVersion = latest?.results?.[0]?.version;
-      if (latestVersion && latestVersion !== current) {
+      if (latestVersion && latestVersion > current!) {
         const hasSeenNewVersionModal = await AsyncStorage.getItem(`hasSeenNewVersionModal_${latestVersion}`);
         if (!hasSeenNewVersionModal) {
           setLatestVersion(latestVersion);
@@ -148,6 +151,12 @@ export default function HomeScreen() {
       });
     }
   }, [user?.id]);
+
+  useEffect(() => {
+        analytics.track(Events.SCREEN_VIEW, {
+          [Properties.SCREEN_NAME]: 'Tasks',
+        });
+      }, []);
 
   // Get tasks for the selected day
   const tasksForSelectedDay = useMemo(() => {
@@ -216,22 +225,27 @@ export default function HomeScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            // Delete all tasks in the list
-            for (const task of tasksInList) {
-              await removeTask(task.id);
-            }
+            // Delete all tasks in the list in a single query
+            await removeTasksByList(listId);
             // Delete the list
             await removeList(listId);
-          }
-        }
+          },
+        },
       ]
     );
-  }, [tasks, removeTask, removeList]);
+  }, [tasks, removeTasksByList, removeList]);
 
   // Handler for deleting a task
   const handleDeleteTask = useCallback(async (taskId: string) => {
     await removeTask(taskId);
   }, [removeTask]);
+
+  const handleMoveTask = useCallback(
+    async (taskId: string, newDate: string) => {
+      await updateTask(taskId, { due_date: newDate });
+    },
+    [updateTask]
+  );
 
   // Handler for closing intro modal
   const handleCloseIntroModal = useCallback(async () => {
@@ -273,13 +287,10 @@ export default function HomeScreen() {
             onDaySelect={setSelectedDay}
           />
 
-          {/* Progress Section */}
           <ProgressCard
-            selectedDay={selectedDay}
-            today={today}
-            completedCount={completedForSelectedDay}
-            totalCount={tasksForSelectedDay.length}
-          />
+                  completedCount={completedForSelectedDay}
+                  totalCount={tasksForSelectedDay.length}             />
+
 
           {/* Today's Focus Section or Empty State */}
           {loading ? (
@@ -290,6 +301,7 @@ export default function HomeScreen() {
           ) : incompleteTasks.length === 0 ? (
             <EmptyState selectedDay={selectedDay} today={today} />
           ) : (
+            
             <View className="pt-5">
               <TasksSectionHeader
                 selectedDay={selectedDay}
@@ -302,6 +314,7 @@ export default function HomeScreen() {
                 lists={lists}
                 onToggleComplete={toggleComplete}
                 onDeleteTask={handleDeleteTask}
+                onMoveTask={handleMoveTask}
               />
             </View>
           )}

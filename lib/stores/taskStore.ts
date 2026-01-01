@@ -42,6 +42,7 @@ type TaskState = {
   ) => Promise<Task | null>;
   updateTask: (id: string, patch: Partial<Task>) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
+  removeTasksByList: (listId: string) => Promise<void>;
   toggleComplete: (id: string) => Promise<void>;
   generateRecurringTaskOccurrences: () => Promise<void>;
   tasksByList: (listId: string) => Task[];
@@ -62,7 +63,6 @@ export const useTaskStore = create<TaskState>()(
             .from('tasks')
             .select('*')
             .eq('user_id', userId)
-            .eq('status','pending')
             .order('created_at', { ascending: false });
           if (error) throw error;
           set({ tasks: data || [], loading: false });
@@ -204,6 +204,22 @@ export const useTaskStore = create<TaskState>()(
           set({ tasks: get().tasks.filter((t) => t.id !== id) });
         } catch (error) {
           console.error('Error removing task:', error);
+        }
+      },
+      
+      // Bulk delete helper – used when deleting an entire list
+      removeTasksByList: async (listId: string) => {
+        try {
+          const { error } = await supabase
+            .from('tasks')
+            .delete()
+            .eq('list_id', listId);
+
+          if (error) throw error;
+
+          set({ tasks: get().tasks.filter((t) => t.list_id !== listId) });
+        } catch (error) {
+          console.error('Error removing tasks by list:', error);
         }
       },
       

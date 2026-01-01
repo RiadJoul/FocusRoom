@@ -22,7 +22,6 @@ const INTRO_ITEMS = [
 ];
 
 function IntroItem({ text, delay, index }: { text: string; delay: number; index: number }) {
-  const opacity = useSharedValue(1);
   const strikethrough = useSharedValue(0);
   const [textWidth, setTextWidth] = useState(0);
 
@@ -45,7 +44,7 @@ function IntroItem({ text, delay, index }: { text: string; delay: number; index:
       entering={FadeInDown.delay(index * 150)}
       className="flex-row items-center mb-4"
     >
-      <View className="w-8 h-8 rounded-full bg-primary items-center justify-center mr-3">
+      <View className="w-8 h-8 rounded-full bg-secondary items-center justify-center mr-3">
         <Text className="text-white font-primary-bold text-base">✓</Text>
       </View>
       <View className="relative">
@@ -107,12 +106,12 @@ export function IntroModal({ visible, onClose }: IntroModalProps) {
       <View className="flex-1 bg-black/50 items-center justify-center px-6">
         <Animated.View 
           entering={FadeIn.duration(400)}
-          className="bg-white rounded-3xl p-8 w-full max-w-md"
+          className="bg-white rounded-3xl p-5 w-full max-w-md"
         >
           {/* Title */}
           <Animated.Text 
             entering={FadeInDown}
-            className="text-background font-primary-bold text-3xl mb-2"
+            className="text-background font-primary-bold text-2xl"
           >
             Welcome to FocusRoom!
           </Animated.Text>
@@ -120,7 +119,7 @@ export function IntroModal({ visible, onClose }: IntroModalProps) {
           {/* Subtitle */}
           <Animated.View 
             entering={FadeInDown.delay(200)}
-            className="bg-gray-100 rounded-2xl p-6 mb-6 mt-6"
+            className="bg-gray-100 rounded-2xl p-6 mb-6 mt-3"
           >
             <Text className="text-gray-700 font-primary-semibold text-base mb-4">
               FocusRoom can help you...
@@ -141,8 +140,8 @@ export function IntroModal({ visible, onClose }: IntroModalProps) {
               entering={FadeInDown.delay(450)}
               className="flex-row items-center"
             >
-              <View className="w-8 h-8 rounded-full border-2 border-gray-300 items-center justify-center mr-3">
-                <View className="w-3 h-3 rounded-full bg-gray-300" />
+              <View className="w-8 h-8 rounded-full border-2 border-secondary items-center justify-center mr-3">
+                <View className="w-3 h-3 rounded-full bg-secondary" />
               </View>
               <Text className="text-gray-700 font-primary-medium text-base">
                 Now it's your turn! ✨

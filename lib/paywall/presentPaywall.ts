@@ -5,7 +5,7 @@ import { updatePremiumStatus } from '@/lib/hooks/usePremiumStatus';
 
 type PaywallSource =
   | 'root_layout_trial'
-  | 'profile_screen'
+  | 'cockpit_screen'
   | 'floating_recurring_button'
   | 'task_selection_modal'
   | string;

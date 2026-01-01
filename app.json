@@ -22,8 +22,11 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio", "remote-notification"],
-        "NSUserNotificationUsageDescription": "FocusRoom sends reminders that help you stay on track with your focus missions."
+        "UIBackgroundModes": [
+          "audio",
+          "remote-notification"
+        ],
+        "NSUserNotificationsUsageDescription": "FocusRoom sends gentle reminders to start focusing so you stay on track with your missions."
       }
     },
     "android": {
@@ -54,7 +57,9 @@
         }
       ],
       "expo-font",
-      ["expo-apple-authentication"],
+      [
+        "expo-apple-authentication"
+      ],
       [
         "expo-notifications",
         {
@@ -62,6 +67,13 @@
           "color": "#ffffff",
           "sounds": [],
           "mode": "production"
+        }
+      ],
+      [
+        "react-native-device-activity",
+        {
+          "appleTeamId": "CRW66LT2G4",
+          "appGroup": "group.com.anonymous.focusRoom"
         }
       ]
     ],
