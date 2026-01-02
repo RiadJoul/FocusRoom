@@ -92,12 +92,17 @@ export function ListCreateModal({ visible, onClose, onCreate }: ListCreateModalP
     opacity: pickerProgress.value,
   }));
 
-  // Shake animation when user taps Done without choosing an icon
+  // Shake animation when user taps Done without choosing an icon or title
   const shake = useSharedValue(0);
   const circleShakeStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: shake.value },
     ],
+  }));
+
+  const nameShake = useSharedValue(0);
+  const nameShakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: nameShake.value }],
   }));
 
 
@@ -125,10 +130,23 @@ export function ListCreateModal({ visible, onClose, onCreate }: ListCreateModalP
     if (isSubmitting) return;
 
     // Require the user to explicitly pick an icon at least once
-    if (!hasChosenIcon || title.trim().length === 0) {
+    if (!hasChosenIcon) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       // Trigger a quick shake on the circle/card
       shake.value = withSequence(
+        withTiming(-8, { duration: 50 }),
+        withTiming(8, { duration: 80 }),
+        withTiming(-4, { duration: 60 }),
+        withTiming(4, { duration: 60 }),
+        withTiming(0, { duration: 50 })
+      );
+      return;
+    }
+
+    // Icon is chosen but title is missing – shake the name input instead
+    if (title.trim().length === 0) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      nameShake.value = withSequence(
         withTiming(-8, { duration: 50 }),
         withTiming(8, { duration: 80 }),
         withTiming(-4, { duration: 60 }),
@@ -304,7 +322,7 @@ export function ListCreateModal({ visible, onClose, onCreate }: ListCreateModalP
           {!isIconPickerOpen && (
             <>
               {/* Title input - Notion-style */}
-              <View className="w-full mt-8">
+              <Animated.View style={[{ width: '100%', marginTop: 32 }, nameShakeStyle]}>
                 <TextInput
                   value={title}
                   onChangeText={setTitle}
@@ -321,7 +339,7 @@ export function ListCreateModal({ visible, onClose, onCreate }: ListCreateModalP
                     fontWeight: '600',
                   }}
                 />
-              </View>
+              </Animated.View>
 
               {/* Color presets + custom color picker. When custom is open, the slider takes full width. */}
               <View className="w-full mt-8">

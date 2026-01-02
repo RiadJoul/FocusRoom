@@ -67,7 +67,7 @@ export function RecurringTaskModal({
   const [showManager, setShowManager] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const snapPoints = useMemo(() => ['45%', '60%'], []);
+  const snapPoints = useMemo(() => ['45%', '80%'], []);
 
   const renderBackdrop = useCallback(
     (props: any) => (
