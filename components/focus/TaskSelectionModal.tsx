@@ -1,15 +1,17 @@
 import { Task } from '@/lib/stores/taskStore';
+import { useListStore } from '@/lib/stores/listStore';
 import { useUserStore } from '@/lib/stores/userStore';
 import { formatDueDate, parseLocalDateKey } from '@/lib/utils/dateUtils';
-import { getPriorityColor } from '@/lib/utils/taskUtils';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, ScrollView, Text, TouchableOpacity, View, TouchableWithoutFeedback } from 'react-native';
+import { Modal, ScrollView, Text, TouchableOpacity, View, TouchableWithoutFeedback, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
-import { PLANET_TRIPS, PlanetTrip, formatDistance, formatDuration } from './PlanetTrips';
+import { PLANET_TRIPS, PlanetTrip, formatDuration } from './PlanetTrips';
 import { Ionicons } from '@expo/vector-icons';
 import { Video, ResizeMode } from 'expo-av';
+import { formatDistanceWithUnit } from '@/lib/utils/distance';
+import { getPriorityColor } from '@/lib/utils/taskUtils';
 
 interface TaskSelectionModalProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
@@ -19,12 +21,20 @@ interface TaskSelectionModalProps {
 
 export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: TaskSelectionModalProps) {
   const user = useUserStore((state) => state.user);
+  const lists = useListStore((state) => state.lists);
+  const distanceUnit = useUserStore((state) => state.distanceUnit);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<'tasks' | 'planet' | 'mode'>('tasks');
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
   const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
   const cinematicVideoRef = useRef<Video | null>(null);
+  const shipProgress = useRef(new Animated.Value(0)).current;
+
+  // Precompute min/max duration so orbits feel physically “near” vs “far”
+  const durations = PLANET_TRIPS.map((t) => t.duration);
+  const minDuration = Math.min(...durations);
+  const maxDuration = Math.max(...durations);
 
   const handleToggleTask = (taskId: string) => {
     setSelectedTaskIds(prev => {
@@ -137,6 +147,32 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     }
   }, [step, isTaskModalVisible]);
 
+  // Simple looping ship animation for the orbit view
+  useEffect(() => {
+    if (step !== 'planet') return;
+
+    shipProgress.setValue(0);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shipProgress, {
+          toValue: 1,
+          duration: 2600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shipProgress, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+  }, [step, shipProgress]);
+
   return (
     <>
       {/* Fullscreen Trip Selection Modal */}
@@ -154,70 +190,130 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
           </TouchableOpacity>
 
           <Text className="text-white font-primary-bold text-2xl mb-2">
-            Choose Your Trip
+            Pick a destination
           </Text>
           <Text className="text-gray-400 font-primary-medium text-sm mb-6">
-            Select your journey duration
+            Each planet is a different focus length.
           </Text>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 32 }}
-          >
-            {PLANET_TRIPS.map((trip) => (
-              <TouchableOpacity
-                key={trip.id}
-                onPress={() => handleSelectTrip(trip)}
-                className="mb-4 rounded-3xl overflow-hidden"
-
-              >
-                <View className="relative">
-                  {/* Background image */}
-                  <Image
-                    source={trip.image}
-                    style={{ width: '100%', height: 160 }}
-                    contentFit="cover"
-                  />
-                  {/* Dark overlay for text readability */}
+          {/* Orbit style selector */}
+          <View className="items-center mt-2 mb-6">
+            <View className="w-[400px] h-[355px] rounded-[16px] bg-black overflow-hidden border border-white/10">
+              {/* Starfield */}
+              <View className="absolute inset-0">
+                {Array.from({ length: 32 }).map((_, idx) => (
+                  // eslint-disable-next-line react/no-array-index-key
                   <View
+                    key={idx}
+                    className="absolute w-[2px] h-[2px] rounded-full bg-white/60"
                     style={{
-                      position: 'absolute',
-                      inset: 0,
-                      backgroundColor: '#000000CC',
+                      opacity: 0.3 + (idx % 4) * 0.15,
+                      top: `${(idx * 19) % 95}%`,
+                      left: `${(idx * 27) % 95}%`,
                     }}
                   />
+                ))}
+              </View>
 
-                  {/* Content */}
-                  <View className="absolute inset-0 p-5 flex justify-between">
-                    <View>
-                      <Text className="text-white font-primary-bold text-xl">
-                        {trip.from} → {trip.to}
-                      </Text>
-                      <Text className="text-gray-200 font-primary-medium text-sm mt-1">
-                        {trip.description} • 🚀 {formatDistance(trip.distance_km)}
-                      </Text>
-                    </View>
+              {/* Orbits */}
+              <View className="absolute inset-0 items-center justify-center">
+                <View className="w-40 h-40 rounded-full border border-white/10" />
+                <View className="w-56 h-56 rounded-full border border-white/10 absolute" />
+              </View>
 
-                    <View className="flex-row items-center justify-between pt-3 border-t border-white/10 mt-3">
-                      <View className="flex-row items-center">
-                        <Text className="text-gray-200 font-primary-medium text-base mr-2">
-                          Trip Time:
-                        </Text>
-                        <Text className="text-white font-primary-bold text-base">
-                          {formatDuration(trip.duration)}
-                        </Text>
-                      </View>
-                      <View className="bg-primary px-4 py-1.5 rounded-xl">
-                        <Text className="text-background font-primary-bold text-sm">
-                          Board Now →
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
+              {/* Origin planet */}
+              <View className="absolute inset-0 items-center justify-center">
+                <View className="w-10 h-10 rounded-full bg-blue-800 border border-indigo-200 items-center justify-center">
+                  <Ionicons name="earth-outline" size={20} color="#ffffff" />
                 </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+                <View className="mt-1 items-center">
+                  <Text className="text-xs text-white font-primary-bold">Earth</Text>
+                </View>
+              </View>
+
+              {/* Destination planets on orbit – distance based on duration */}
+              {PLANET_TRIPS.map((trip, index) => {
+                const total = PLANET_TRIPS.length;
+                const angle = (2 * Math.PI * index) / total - Math.PI / 2;
+                const innerRadius = 100;
+                const outerRadius = 128;
+
+                // Normalised 0–1 based on duration (shorter = closer, longer = farther)
+                const norm =
+                  maxDuration === minDuration
+                    ? 0
+                    : (trip.duration - minDuration) / (maxDuration - minDuration);
+                const radius = innerRadius + norm * (outerRadius - innerRadius);
+
+                const center = 144; // half of 72 * 4 (device-independent-ish)
+                const x = center + radius * Math.cos(angle);
+                const y = center + radius * Math.sin(angle);
+
+                
+
+                return (
+                  <TouchableOpacity
+                    key={trip.id}
+                    onPress={() => handleSelectTrip(trip)}
+                    activeOpacity={0.9}
+                    style={{
+                      position: 'absolute',
+                      left: x + 28,
+                      top: y - 18,
+                    }}
+                  >
+                    <View
+                      className="w-12 h-12 rounded-full items-center justify-center"
+                      style={{ backgroundColor: `${trip.color}33`, borderWidth: 1, borderColor: `${trip.color}80` }}
+                    >
+                      <View
+                        className="w-10 h-10 rounded-full items-center justify-center"
+                        style={{ backgroundColor: trip.color }}
+                      >
+                       <Ionicons name="planet-outline" size={28} color="#000000" />
+
+                      </View>
+                    </View>
+                    <View
+              
+                      className="items-center"
+                    >
+                      <Text className="text-[12px] text-center font-primary-semibold text-gray-100">
+                         {formatDuration(trip.duration)}
+                      </Text>
+                      <Text className="text-[8px] text-center pt-1 font-primary-semibold text-gray-100">
+                         {trip.to}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+            </View>
+          </View>
+
+          {/* Legend */}
+          <View className="mt-1">
+            <Text className="text-gray-400 font-primary-medium text-xs mb-1">
+              Tap any planet to board that mission:
+            </Text>
+            <ScrollView showsHorizontalScrollIndicator={false}>
+              {PLANET_TRIPS.map((trip) => (
+                <View
+                  key={`${trip.id}-legend`}
+                  className="flex-row items-center mr-4 mt-2 px-3 py-1 "
+                >
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: trip.color }}
+                  />
+                  <Text className="text-xs text-gray-100 font-primary-medium">
+                    {trip.to} · {formatDuration(trip.duration)}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
@@ -231,93 +327,142 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
         <TouchableWithoutFeedback onPress={handleClose}>
           <View className="flex-1 justify-end bg-black/50">
             <TouchableWithoutFeedback>
-              <View className="bg-background rounded-t-3xl px-5 pt-4 pb-2 min-h-[70%]">
+              <View className="bg-background rounded-t-3xl px-5 pt-4 pb-2 max-h-[85%]">
                 {step === 'tasks' ? (
-                  <>
+                  <View style={{ flexShrink: 1, maxHeight: '100%' }}>
                     <Text className="text-white font-primary-bold text-2xl mb-2">Select Tasks</Text>
-                    <Text className="text-gray-400 font-primary-medium text-sm mb-6">
+                    <Text className="text-gray-400 font-primary-medium text-sm mb-4">
                       Choose up to 3 tasks to focus on ({selectedTaskIds.size}/3 selected)
                     </Text>
 
                     {tasksToShow.length === 0 ? (
-                      <View className="flex-1 items-center justify-center">
+                      <View className="flex-1 items-center justify-center py-8">
                         <Text className="text-gray-500 font-primary-medium text-center">
                           No tasks available. Add some tasks first!
                         </Text>
                       </View>
                     ) : (
                       <>
-                        <ScrollView
-                          showsVerticalScrollIndicator={false}
-                          style={{ marginBottom: 20 }}
-                        >
-                          {tasksToShow.map((task) => {
-                            const isSelected = selectedTaskIds.has(task.id);
-                            const canSelect = selectedTaskIds.size < 3 || isSelected;
+                        <View style={{ maxHeight: '72%' }}>
+                          <ScrollView
+                            showsVerticalScrollIndicator={true}
+                            contentContainerStyle={{ paddingBottom: 16 }}
+                          >
+                            {tasksToShow.map((task) => {
+                              const list = lists.find((l) => l.id === task.list_id);
+                              const isSelected = selectedTaskIds.has(task.id);
+                              const canSelect = selectedTaskIds.size < 3 || isSelected;
 
-                            return (
-                              <TouchableOpacity
-                                key={task.id}
-                                onPress={() => handleToggleTask(task.id)}
-                                disabled={!canSelect && !isSelected}
-                                className={`mb-3 p-4 rounded-2xl border ${isSelected
-                                  ? 'bg-primary/10 border-primary'
-                                  : canSelect
-                                    ? 'bg-card border-gray-800'
-                                    : 'bg-card-dark border-gray-800/50'
-                                  }`}
-                                activeOpacity={0.7}
-                              >
-                                <View className="flex-row items-center">
-                                  {/* Checkbox */}
-                                  <View
-                                    className={`w-6 h-6 rounded-full border-2 mr-3 items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-700'
-                                      }`}
-                                  >
-                                    {isSelected && (
-                                      <Text className="text-background font-primary-bold text-sm">✓</Text>
-                                    )}
-                                  </View>
+                              return (
+                                <TouchableOpacity
+                                  key={task.id}
+                                  onPress={() => handleToggleTask(task.id)}
+                                  disabled={!canSelect && !isSelected}
+                                  className={`mb-3 rounded-2xl ${canSelect || isSelected ? '' : 'opacity-40'}`}
+                                  activeOpacity={0.7}
+                                >
+                                  <View className="p-4 flex-row items-start">
+                                    {/* Completion ring (used here as selection ring) */}
+                                    <View className="mr-4">
+                                      <View
+                                        style={{
+                                          borderColor: '#9CA3AF',
+                                          borderWidth: 2,
+                                        }}
+                                        className="w-6 h-6 rounded-lg items-center justify-center overflow-hidden"
+                                      >
+                                        {isSelected && (
+                                          <View
+                                            className="absolute inset-0"
+                                            style={{ backgroundColor: list?.color || '#9CA3AF' }}
+                                          />
+                                        )}
+                                        {isSelected && (
+                                          <Ionicons name="checkmark" size={16} color="white" />
+                                        )}
+                                      </View>
+                                    </View>
 
-                                  {/* Task Content */}
-                                  <View className="flex-1">
-                                    <Text
-                                      className={`font-primary-semibold text-base leading-tight ${canSelect ? 'text-white' : 'text-gray-600'
-                                        }`}
-                                    >
-                                      {task.title}
-                                    </Text>
-                                    <View className="flex-row items-center mt-2">
-                                      {/* Priority Badge */}
-                                      <View className={`flex-row items-center px-2 py-1 rounded-md ${getPriorityColor(task.priority)}`}>
+                                    {/* Task Content */}
+                                    <View className="flex-1">
+                                      <View>
                                         <Text
-                                          className="text-xs font-primary-medium capitalize"
-                                          style={{
-                                            color: task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#eab308' : '#22c55e'
-                                          }}
+                                          className={`font-primary-semibold text-base leading-tight ${
+                                            canSelect ? 'text-white' : 'text-gray-600'
+                                          }`}
                                         >
-                                          {task.priority}
+                                          {task.title}
                                         </Text>
                                       </View>
 
-                                      {/* Due Date */}
-                                      {task.due_date && (
-                                        <View className="flex-row items-center">
-                                          <Text className="flex items-center text-xs font-primary-medium text-gray-500">
-                                            <Ionicons name='time-outline' /> {formatDueDate(new Date(task.due_date))}
+                                      <View className="flex-row items-center mt-2 flex-wrap">
+                                        {/* List badge */}
+                                        {list && (
+                                          <View
+                                            className="flex-row items-center px-2 py-0.5 rounded-full mr-2"
+                                            style={{
+                                              backgroundColor: `${list.color ?? '#4B5563'}33`,
+                                            }}
+                                          >
+                                            {list.icon && (
+                                              <Ionicons
+                                                name={list.icon as any}
+                                                size={11}
+                                                color={list.color || '#E5E7EB'}
+                                              />
+                                            )}
+                                            <Text
+                                              className="ml-1 text-[10px] font-primary-medium"
+                                              style={{
+                                                color: list.color || '#E5E7EB',
+                                              }}
+                                            >
+                                              {list.title}
+                                            </Text>
+                                          </View>
+                                        )}
+
+                                        {/* Priority badge */}
+                                        <View
+                                          className={`flex-row items-center py-0.5 px-2 rounded-full mr-2 ${getPriorityColor(
+                                            task.priority,
+                                          )}`}
+                                        >
+                                          <Text
+                                            className="text-[10px] font-primary-medium capitalize"
+                                            style={{
+                                              color:
+                                                task.priority === 'high'
+                                                  ? '#ef4444'
+                                                  : task.priority === 'medium'
+                                                  ? '#eab308'
+                                                  : '#22c55e',
+                                            }}
+                                          >
+                                            {task.priority}
                                           </Text>
                                         </View>
-                                      )}
+
+                                        {/* Due Date */}
+                                        {task.due_date && (
+                                          <View className="flex-row items-center mt-1">
+                                            <Ionicons name="time-outline" size={12} color="#6b7280" />
+                                            <Text className="ml-1 text-[11px] font-primary-medium text-gray-500">
+                                              {formatDueDate(new Date(task.due_date))}
+                                            </Text>
+                                          </View>
+                                        )}
+                                      </View>
                                     </View>
                                   </View>
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </ScrollView>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
 
                         {/* Action Buttons */}
-                        <View className="flex-row gap-3 pb-4">
+                        <View className="flex-row gap-3 pt-2 pb-4">
                           <TouchableOpacity
                             onPress={handleClose}
                             className="flex-1 py-4 rounded-xl bg-gray-900/50 border border-gray-800 items-center"
@@ -329,12 +474,12 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                           <TouchableOpacity
                             onPress={handleNext}
                             disabled={selectedTaskIds.size === 0}
-                            className={`flex-1 py-4 rounded-xl items-center ${selectedTaskIds.size > 0 ? 'bg-primary' : 'bg-gray-800'
+                            className={`flex-1 py-4 rounded-xl items-center ${selectedTaskIds.size > 0 ? 'bg-white' : 'bg-primary'
                               }`}
                             activeOpacity={0.8}
                           >
                             <Text
-                              className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
+                              className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-black' : 'text-black'
                                 }`}
                             >
                               Next: Choose Trip
@@ -343,7 +488,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                         </View>
                       </>
                     )}
-                  </>
+                  </View>
                 ) : (
                   <>
                     <TouchableOpacity
@@ -363,9 +508,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                         <Text className="text-white font-primary-bold text-2xl mb-1">
                           Choose your cockpit view
                         </Text>
-                        <Text className="text-gray-400 font-primary-medium text-sm mb-4">
-                          How do you want to fly from {selectedTrip.from} to {selectedTrip.to} today?
-                        </Text>
+                        
 
                         <View className="mb-6 p-4 rounded-2xl bg-card border border-gray-800/60">
                           <View className="flex-row items-center justify-between mb-3">
@@ -379,7 +522,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                             </View>
                             <View className="ml-3 rounded-full bg-primary/15 px-3 py-1">
                               <Text className="text-primary font-primary-semibold text-xs">
-                                {formatDistance(selectedTrip.distance_km)}
+                                {formatDistanceWithUnit(selectedTrip.distance_km, distanceUnit)}
                               </Text>
                             </View>
                           </View>
@@ -405,7 +548,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                           >
                             <View className="relative">
                               <Image
-                                source={require('../../assets/images/session-map.png')}
+                                source={require('../../assets/images/session-map.jpeg')}
                                 style={{ width: '100%', height: 220 }}
                                 contentFit="cover"
                               />
@@ -435,19 +578,13 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                                 shouldPlay
                                 isLooping
                                 isMuted
-                                
+
                                 style={{ width: '100%', height: 220 }}
                               />
 
 
 
-                              {!user?.is_premium && (
-                                <View className="absolute bottom-3 right-3 rounded-full bg-secondary px-2.5 py-1.5">
-                                  <Text className="text-[11px] font-primary-semibold text-black">
-                                    Upgrade to unlock
-                                  </Text>
-                                </View>
-                              )}
+
 
                               <View className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-1">
                                 <Text className="text-xs font-primary-semibold text-gray-200">

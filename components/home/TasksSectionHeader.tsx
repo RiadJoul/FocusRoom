@@ -14,9 +14,7 @@ export function TasksSectionHeader({ selectedDay, today, taskCount }: TasksSecti
       <Text className="text-2xl font-primary-bold text-white">
         {isSameDay(selectedDay, today) ? "Today's Focus" : formatSelectedDate(selectedDay, today)}
       </Text>
-      <View className="bg-primary/10 border border-primary/20 px-3 py-1 rounded-full">
-        <Text className="text-primary font-primary-bold text-sm">{taskCount} tasks</Text>
-      </View>
+  
     </View>
   );
 }

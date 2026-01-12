@@ -1,13 +1,7 @@
-import React, { useEffect, useState } from 'react';
 import { Linking, Modal, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
     FadeIn,
     FadeInDown,
-    useAnimatedStyle,
-    useSharedValue,
-    withDelay,
-    withSequence,
-    withTiming
 } from 'react-native-reanimated';
 
 interface NewVersionModalProps {
@@ -17,8 +11,12 @@ interface NewVersionModalProps {
 }
 
 
-export function NewVersionModal({ visible, latestVersion, onClose }: NewVersionModalProps) {
+const handleRedirectToStore = () => {
+    const url = 'https://apps.apple.com/us/app/focusroom-block-distractions/id6754952142';
+    Linking.openURL(url);
+}
 
+export function NewVersionModal({ visible, latestVersion, onClose }: NewVersionModalProps) {
     return (
         <Modal
             visible={visible}
@@ -48,9 +46,6 @@ export function NewVersionModal({ visible, latestVersion, onClose }: NewVersionM
                             A new version of FocusRoom is available: {latestVersion}
                         </Text>
 
-
-
-                        {/* Final Item - Now it's your turn */}
                         <Animated.View
                             entering={FadeInDown.delay(450)}
                             className="flex-row items-center"
@@ -64,14 +59,8 @@ export function NewVersionModal({ visible, latestVersion, onClose }: NewVersionM
                     {/* Button */}
                     <Animated.View className="gap-y-2">
                         <TouchableOpacity
-
-                            onPress={() => {
-                                // Open app store link
-                                const url = 'https://apps.apple.com/us/app/focusroom-block-distractions/id6754952142';
-                                Linking.openURL(url);
-                            }
-                            }
-                            className={`py-4 rounded-xl items-center bg-secondary/90 px-6`}
+                            onPress={handleRedirectToStore}
+                            className={`py-4 rounded-xl items-center bg-green-800 px-6`}
                             activeOpacity={0.8}
                         >
                             <Text className={`font-primary-bold text-lg text-white`}>

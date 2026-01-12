@@ -6,59 +6,79 @@ export interface PlanetTrip {
   distance_km: number; // distance in kilometers
   color: string;
   description: string;
-  image: any;
 }
 
+// Ordered by real-ish minimum distance from Earth (nearest → farthest)
 export const PLANET_TRIPS: PlanetTrip[] = [
   {
-    id: 'earth-moon',
+    id: 'earth-venus',
     from: 'Earth',
-    to: 'Moon',
-    duration: 25 * 60, // 25 minutes
-    distance_km: 384_400,
-    color: '#A0AEC0', // soft lunar gray-blue
-    description: 'Quick focus boost 🌙',
-    image: require('../../assets/images/planets/moon.jpg'),
+    to: 'Venus',
+    duration: 15 * 60, // 15 minutes
+    // ~41 million km (closest approach)
+    distance_km: 41_000_000,
+    color: '#F97316', // warm orange
+    description: 'Fast warm‑up mission 🟠',
   },
   {
     id: 'earth-mars',
     from: 'Earth',
     to: 'Mars',
+    duration: 25 * 60, // 25 minutes
+    // ~78 million km
+    distance_km: 78_000_000,
+    color: '#EF4444', // red
+    description: 'Quick focus boost 🔴',
+  },
+  {
+    id: 'earth-mercury',
+    from: 'Earth',
+    to: 'Mercury',
     duration: 45 * 60, // 45 minutes
-    distance_km: 225_000_000,
-    color: '#FF6B6B', // warm coral red
-    description: 'Standard focus flight 🔥',
-    image: require('../../assets/images/planets/mars.jpg'),
+    // ~91 million km
+    distance_km: 91_000_000,
+    color: '#FACC15', // yellow
+    description: 'Standard focus flight 🟡',
   },
   {
     id: 'earth-jupiter',
     from: 'Earth',
     to: 'Jupiter',
     duration: 80 * 60, // 1h20min
-    distance_km: 628_000_000,
-    color: '#F5A623', // golden amber
+    // ~588 million km
+    distance_km: 588_000_000,
+    color: '#A855F7', // purple
     description: 'Deep work orbit 🪐',
-    image: require('../../assets/images/planets/jupiter.jpg'),
   },
   {
     id: 'earth-saturn',
     from: 'Earth',
     to: 'Saturn',
     duration: 120 * 60, // 2 hours
+    // ~1.2 billion km
     distance_km: 1_200_000_000,
-    color: '#00B7FF', // soft lilac ring color
+    color: '#38BDF8', // cyan
     description: 'Extended flow mission 💫',
-    image: require('../../assets/images/planets/saturn.jpg'),
+  },
+  {
+    id: 'earth-uranus',
+    from: 'Earth',
+    to: 'Uranus',
+    duration: 150 * 60, // 2h30min
+    // ~2.6 billion km
+    distance_km: 2_600_000_000,
+    color: '#22C55E', // green
+    description: 'Long‑haul deep focus 💚',
   },
   {
     id: 'earth-neptune',
     from: 'Earth',
     to: 'Neptune',
     duration: 180 * 60, // 3 hours
+    // ~4.3 billion km
     distance_km: 4_300_000_000,
-    color: '#4C51BF', // deep ocean blue
+    color: '#0EA5E9', // deep blue
     description: 'Marathon focus voyage 🌊',
-    image: require('../../assets/images/planets/neptune.jpg'),
   },
 ];
 
@@ -66,12 +86,11 @@ if (__DEV__) {
   PLANET_TRIPS.unshift({
     id: 'test-flight',
     from: 'Earth',
-    to: 'Test planet',
+    to: 'Mars (test)',
     duration: 1 * 60, // 1 minutes
     distance_km: 6_400,
     color: '#A0AEC0', // soft lunar gray-blue
     description: 'Quick focus test 🌙',
-    image: require('../../assets/images/session-map.png'),
   })
 }
 

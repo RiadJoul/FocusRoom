@@ -113,7 +113,8 @@ export function Model3DViewer({
     });
     const textbookLeftPage = new THREE.Mesh(textbookLeftPageGeometry, textbookPageMaterial);
     textbookLeftPage.position.set(-0.5, 0.062, 0.2); // Slightly above text lines
-    textbookLeftPage.rotation.y = -0.15;
+    // Keep pages perfectly aligned for a tidier look
+    textbookLeftPage.rotation.y = 0;
     textbookLeftPage.castShadow = true;
     textbookLeftPage.receiveShadow = true;
     deskGroup.add(textbookLeftPage);
@@ -129,7 +130,7 @@ export function Model3DViewer({
     // Right page: offset Y and Z to avoid Z-fighting
     const textbookRightPage = new THREE.Mesh(textbookLeftPageGeometry, textbookPageMaterial);
     textbookRightPage.position.set(-0.05, 0.064, 0.26); // Slightly higher and further in Z
-    textbookRightPage.rotation.y = 0.15;
+    textbookRightPage.rotation.y = 0;
     textbookRightPage.castShadow = true;
     textbookRightPage.receiveShadow = true;
     deskGroup.add(textbookRightPage);
@@ -154,7 +155,7 @@ export function Model3DViewer({
       const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
       const line = new THREE.Mesh(lineGeometry, lineMaterial);
       line.position.set(-0.5, 0.063, -0.1 + i * 0.05);
-      line.rotation.y = -0.15;
+      line.rotation.y = 0;
       deskGroup.add(line);
     }
 
@@ -167,7 +168,7 @@ export function Model3DViewer({
     });
     const diagramBox = new THREE.Mesh(diagramBoxGeometry, diagramMaterial);
     diagramBox.position.set(-0.5, 0.063, 0.5);
-    diagramBox.rotation.y = -0.15;
+    diagramBox.rotation.y = 0;
     deskGroup.add(diagramBox);
 
     // Text on right page
@@ -176,7 +177,7 @@ export function Model3DViewer({
       const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
       const line = new THREE.Mesh(lineGeometry, lineMaterial);
       line.position.set(-0.05, 0.063, -0.12 + i * 0.05);
-      line.rotation.y = 0.15;
+      line.rotation.y = 0;
       deskGroup.add(line);
     }
 
@@ -187,7 +188,7 @@ export function Model3DViewer({
     });
     const notebook = new THREE.Mesh(notebookGeometry, notebookMaterial);
     notebook.position.set(0.65, 0.06, 0.35);
-    notebook.rotation.y = -0.05;
+    notebook.rotation.y = 0;
     deskGroup.add(notebook);
 
     // Notebook pages edge
@@ -197,7 +198,7 @@ export function Model3DViewer({
     });
     const pages = new THREE.Mesh(pagesGeometry, pagesMaterial);
     pages.position.set(0.65, 0.07, 0.35);
-    pages.rotation.y = -0.05;
+    pages.rotation.y = 0;
     deskGroup.add(pages);
 
     // Notebook spiral binding
@@ -677,10 +678,10 @@ export function Model3DViewer({
     createSucculentLayer(0.035, 8, 0.22, 0.3);
     createSucculentLayer(0.02, 6, 0.25, 0.15);
 
-    // CLEAN DESK MAT (subtle, organized)
+    // CLEAN DESK MAT (subtle, organized) – darker to contrast the wooden desk
     const deskMatGeometry = new THREE.BoxGeometry(2.8, 0.006, 2);
     const deskMatMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x8F8F8F
+      color: 0x111111
     });
     const deskMat = new THREE.Mesh(deskMatGeometry, deskMatMaterial);
     deskMat.position.set(0, 0.058, 0.3);
@@ -709,110 +710,6 @@ export function Model3DViewer({
     stars.renderOrder = 0; // Render stars first
     starsRef.current = stars;
     scene.add(stars);
-
-    // Function to spawn a random planet occasionally
-    const spawnPlanet = () => {
-      const planetTypes = [
-        { 
-          name: 'Earth-like',
-          size: 0.8, 
-          color: 0x2E5F8F, 
-          emissive: 0x1A3A5F, 
-          intensity: 0.15,
-          roughness: 0.8,
-          metalness: 0.1
-        },
-        { 
-          name: 'Mars',
-          size: 1.2, 
-          color: 0xCD5C3C, 
-          emissive: 0x5C2812, 
-          intensity: 0.2,
-          roughness: 0.9,
-          metalness: 0.0
-        },
-        { 
-          name: 'Jupiter',
-          size: 0.5, 
-          color: 0xC88B3A, 
-          emissive: 0x8B5A2B, 
-          intensity: 0.25,
-          roughness: 0.6,
-          metalness: 0.2
-        },
-        { 
-          name: 'Moon',
-          size: 1.5, 
-          color: 0xB8B8B8, 
-          emissive: 0x4A4A4A, 
-          intensity: 0.15,
-          roughness: 1.0,
-          metalness: 0.0
-        },
-        { 
-          name: 'Venus',
-          size: 1.0, 
-          color: 0xFFC649, 
-          emissive: 0xCC8833, 
-          intensity: 0.3,
-          roughness: 0.7,
-          metalness: 0.1
-        },
-        { 
-          name: 'Neptune',
-          size: 0.3, 
-          color: 0x4169E1, 
-          emissive: 0x2C4C9A, 
-          intensity: 0.2,
-          roughness: 0.5,
-          metalness: 0.3
-        },
-      ];
-
-      const type = planetTypes[Math.floor(Math.random() * planetTypes.length)];
-      
-      // Create procedural sphere planet with better materials
-      const geometry = new THREE.SphereGeometry(type.size, 64, 64);
-      
-      // Use MeshStandardMaterial for more realistic rendering
-      const material = new THREE.MeshStandardMaterial({ 
-        color: type.color,
-        emissive: type.emissive,
-        emissiveIntensity: type.intensity,
-        roughness: type.roughness,
-        metalness: type.metalness,
-        flatShading: false,
-      });
-      
-      // Add subtle random color variations to vertices for more realism
-      const colors = [];
-      const positionAttribute = geometry.attributes.position;
-      for (let i = 0; i < positionAttribute.count; i++) {
-        const variation = 0.85 + Math.random() * 0.15; // Random variation 85-100%
-        colors.push(variation, variation, variation);
-      }
-      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      material.vertexColors = true;
-      
-      const planet = new THREE.Mesh(geometry, material);
-      
-      // Random starting position far away
-      const side = Math.random() > 0.5 ? 1 : -1;
-      planet.position.set(
-        side * (3 + Math.random() * 4), // Random x position
-        -2 + Math.random() * 4, // Random y position
-        -30 - Math.random() * 10 // Start far back
-      );
-      
-      scene.add(planet);
-      planetsRef.current.push(planet);
-    };
-
-    // Spawn initial planets occasionally (every 3-5 minutes)
-    let nextPlanetSpawn = Math.random() * 120000 + 180000; // Random between 3-5 minutes (180000-300000ms)
-    let lastSpawnTime = 0;
-
-    
 
     meshRef.current = deskGroup;
     scene.add(deskGroup);
@@ -878,44 +775,6 @@ export function Model3DViewer({
         }
         
         starsRef.current.geometry.attributes.position.needsUpdate = true;
-      }
-
-      // Move planets towards camera and remove when passed
-      const currentTime = Date.now();
-      if (currentTime - lastSpawnTime > nextPlanetSpawn && planetsRef.current.length < 2) {
-        spawnPlanet();
-        lastSpawnTime = currentTime;
-        nextPlanetSpawn = Math.random() * 120000 + 180000; // Random between 3-5 minutes (180000-300000ms)
-      }
-
-      // Update planet positions
-      for (let i = planetsRef.current.length - 1; i >= 0; i--) {
-        const planet = planetsRef.current[i];
-        planet.position.z += 0.08; // Move towards camera
-        planet.rotation.y += 0.005; // Slow rotation
-        
-        // Remove planet when it passes the camera
-        if (planet.position.z > 15) {
-          sceneRef.current?.remove(planet);
-          
-          // Dispose geometry and materials properly
-          planet.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-              if (child.geometry) {
-                child.geometry.dispose();
-              }
-              if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach(material => material.dispose());
-                } else {
-                  child.material.dispose();
-                }
-              }
-            }
-          });
-          
-          planetsRef.current.splice(i, 1);
-        }
       }
 
       if (meshRef.current) {

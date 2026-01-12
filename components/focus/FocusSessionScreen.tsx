@@ -1,22 +1,31 @@
 import { Task } from '@/lib/stores/taskStore';
+import { useListStore } from '@/lib/stores/listStore';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import { Text, TouchableOpacity, View, ScrollView } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
   FadeInDown,
-  FadeInLeft,
-  FadeOutLeft,
+  FadeOut,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { Model3DViewer } from './Space3DViewer';
 import { SpaceMapViewer } from './SpaceMapViewer';
-import { PlanetTrip, formatDistance } from './PlanetTrips';
+import { PlanetTrip } from './PlanetTrips';
 import * as Notifications from 'expo-notifications';
+import { formatDueDate } from '@/lib/utils/dateUtils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUserStore } from '@/lib/stores/userStore';
+import { formatDistanceWithUnit } from '@/lib/utils/distance';
 
 interface FocusSessionScreenProps {
   tasks: Task[];
@@ -34,13 +43,18 @@ export function FocusSessionScreen({
   onMarkTasksComplete,
   mode = '3d',
 }: FocusSessionScreenProps) {
+  type AmbientSoundKey = 'space-rumble' | 'rain-drops';
+
+  const lists = useListStore((state) => state.lists);
   const [remainingSeconds, setRemainingSeconds] = useState(trip.duration);
   const [isPaused, setIsPaused] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [, setSessionFailed] = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [isMuted, setIsMuted] = useState(false);
-  const [allTasksSwiped, setAllTasksSwiped] = useState(false);
-  const [showTaskOverlay, setShowTaskOverlay] = useState(false);
+  const [ambientSoundKey, setAmbientSoundKey] = useState<AmbientSoundKey>('space-rumble');
+  const DEFAULT_VOLUME = 0.35;
+  const [showSoundPicker, setShowSoundPicker] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const [sessionEndTimestamp, setSessionEndTimestamp] = useState<number>(
@@ -48,10 +62,34 @@ export function FocusSessionScreen({
   );
   const pauseStartedAtRef = useRef<number | null>(null);
   const notificationIdRef = useRef<string | null>(null);
+  const distanceUnit = useUserStore((s) => s.distanceUnit);
+
+  // Load preferred ambient sound from storage
+  useEffect(() => {
+    const loadPreferredSound = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('focus_ambient_sound');
+        if (stored === 'space-rumble' || stored === 'rain-drops') {
+          setAmbientSoundKey(stored);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    };
+
+    loadPreferredSound();
+  }, []);
 
   // Setup and play ambient sound
   useEffect(() => {
-    let sound: Audio.Sound | null = null;
+    let cancelled = false;
+
+    const loadSoundForKey = (key: AmbientSoundKey) => {
+      if (key === 'rain-drops') {
+        return require('@/assets/sounds/rain-drops.mp3');
+      }
+      return require('@/assets/sounds/space-rumble.mp3');
+    };
 
     const setupSound = async () => {
       try {
@@ -62,23 +100,47 @@ export function FocusSessionScreen({
           shouldDuckAndroid: true,
         });
 
-        // Try to load the deep ambient sound
+        // Clean up any previous sound instance
+        if (soundRef.current) {
+          try {
+            await soundRef.current.stopAsync();
+          } catch {
+            // ignore
+          }
+          try {
+            await soundRef.current.unloadAsync();
+          } catch {
+            // ignore
+          }
+          soundRef.current = null;
+        }
+
+        // Try to load the selected ambient sound
         try {
           const { sound: loadedSound } = await Audio.Sound.createAsync(
-            require('@/assets/sounds/space-rumble.mp3'),
+            loadSoundForKey(ambientSoundKey),
             {
               isLooping: true,
-              volume: 0.3,
+              volume: DEFAULT_VOLUME,
             },
             null,
             true
           );
 
-          sound = loadedSound;
+          if (cancelled) {
+            await loadedSound.unloadAsync();
+            return;
+          }
+
           soundRef.current = loadedSound;
-          await loadedSound.playAsync();
+          if (!isPaused && !isMuted && !sessionEnded) {
+            await loadedSound.playAsync();
+          }
         } catch (soundError) {
-          console.warn('⚠️ Space rumble sound file not found. Add space-rumble.mp3 to assets/sounds/');
+          console.warn(
+            '⚠️ Ambient sound file not found. Ensure space-rumble.mp3 and rain-drops.mp3 exist in assets/sounds/',
+            soundError
+          );
           console.warn('The focus session will work without sound.');
         }
       } catch (error) {
@@ -91,11 +153,16 @@ export function FocusSessionScreen({
     return () => {
       // Cleanup sound on unmount
       if (soundRef.current) {
-        soundRef.current.stopAsync();
-        soundRef.current.unloadAsync();
+        soundRef.current
+          .unloadAsync()
+          .catch(() => {
+            // ignore unload errors if sound was never fully loaded
+          });
+        soundRef.current = null;
       }
+      cancelled = true;
     };
-  }, []);
+  }, [ambientSoundKey]);
 
   // Handle pause/resume of sound
   useEffect(() => {
@@ -108,11 +175,26 @@ export function FocusSessionScreen({
     }
   }, [isPaused, sessionEnded, isMuted]);
 
-  // Stop sound when session ends
+  // Stop (and unload) sound when session ends so debrief is quiet.
   useEffect(() => {
-    if (sessionEnded && soundRef.current) {
-      soundRef.current.stopAsync();
-    }
+    if (!sessionEnded) return;
+
+    const stopSound = async () => {
+      if (!soundRef.current) return;
+      try {
+        await soundRef.current.stopAsync();
+      } catch {
+        // ignore if already stopped
+      }
+      try {
+        await soundRef.current.unloadAsync();
+      } catch {
+        // ignore if not fully loaded
+      }
+      soundRef.current = null;
+    };
+
+    stopSound();
   }, [sessionEnded]);
 
   // Schedule a completion notification once, based on the expected end time.
@@ -144,8 +226,11 @@ export function FocusSessionScreen({
             sound: true,
             data: { type: 'focus_session_complete' },
           },
-          // Use an absolute fire date to avoid any ambiguity with relative seconds.
-          trigger: new Date(fireTime),
+          // Use an absolute fire date trigger (new API shape).
+          trigger: {
+            type: 'date',
+            date: new Date(fireTime),
+          } as Notifications.NotificationTriggerInput,
         });
         notificationIdRef.current = id;
       } catch (err) {
@@ -159,7 +244,7 @@ export function FocusSessionScreen({
     return () => {
       if (notificationIdRef.current) {
         Notifications.cancelScheduledNotificationAsync(notificationIdRef.current).catch(
-          () => {},
+          () => { },
         );
         notificationIdRef.current = null;
       }
@@ -210,7 +295,7 @@ export function FocusSessionScreen({
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     if (hrs > 0) {
       return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
@@ -220,7 +305,7 @@ export function FocusSessionScreen({
   const formatRemainingTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
-    
+
     if (hrs > 0) {
       if (mins > 0) {
         return `${hrs}h${mins}min`;
@@ -235,6 +320,7 @@ export function FocusSessionScreen({
 
   const handlePause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowGiveUpMenu(false);
     setIsPaused((prev) => {
       const next = !prev;
       if (next) {
@@ -255,27 +341,6 @@ export function FocusSessionScreen({
     setIsMuted(!isMuted);
   };
 
-  const handleEndSession = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert(
-      'End Session?',
-      'Are you sure you want to end your focus session?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Session',
-          style: 'destructive',
-          onPress: () => {
-            setSessionEnded(true);
-            if (intervalRef.current) {
-              clearInterval(intervalRef.current);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const handleToggleTaskComplete = (taskId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCompletedTaskIds(prev => {
@@ -289,36 +354,7 @@ export function FocusSessionScreen({
     });
   };
 
-  const handleCompleteTask = (taskId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setCompletedTaskIds((prev) => {
-      const newSet = new Set(prev);
-      newSet.add(taskId);
 
-      // If every task for this session has been swiped right, trigger finish
-      if (newSet.size === tasks.length) {
-        setAllTasksSwiped(true);
-      }
-
-      return newSet;
-    });
-  };
-
-  // Finish session in a side-effect when all tasks have been swiped
-  useEffect(() => {
-    if (!allTasksSwiped) return;
-
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-
-    const completedIds = Array.from(completedTaskIds);
-    const elapsedSeconds = trip.duration - remainingSeconds;
-    onMarkTasksComplete(completedIds);
-    onEndSession(elapsedSeconds, completedIds);
-    setSessionEnded(true);
-    router.back();
-  }, [allTasksSwiped]);
 
   const handleFinishAndMarkComplete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -335,100 +371,284 @@ export function FocusSessionScreen({
     router.back();
   };
 
+  const [showGiveUpMenu, setShowGiveUpMenu] = useState(false);
+  const giveUpProgress = useSharedValue(0);
+  const giveUpHapticsRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const giveUpCompletedRef = useRef(false);
+  const giveUpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopGiveUpHaptics = () => {
+    if (giveUpHapticsRef.current) {
+      clearInterval(giveUpHapticsRef.current);
+      giveUpHapticsRef.current = null;
+    }
+    if (giveUpTimeoutRef.current) {
+      clearTimeout(giveUpTimeoutRef.current);
+      giveUpTimeoutRef.current = null;
+    }
+  };
+
+  const handleGiveUpConfirmed = () => {
+    if (giveUpCompletedRef.current) return;
+    giveUpCompletedRef.current = true;
+    stopGiveUpHaptics();
+    setShowGiveUpMenu(false);
+    setSessionFailed(true);
+    setSessionEnded(true);
+
+    // Stop any ambient sounds immediately to avoid audio glitches
+    if (soundRef.current) {
+      soundRef.current.stopAsync().catch(() => { });
+      soundRef.current.unloadAsync().catch(() => { });
+      soundRef.current = null;
+    }
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  const handleGiveUpHoldStart = () => {
+    // Continuous light haptics while holding.
+    giveUpCompletedRef.current = false;
+    stopGiveUpHaptics();
+    giveUpHapticsRef.current = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    }, 10);
+
+    giveUpProgress.value = 0;
+    giveUpProgress.value = withTiming(1, { duration: 1300 });
+
+    // JS timeout mirrors the animation duration to finalize give up
+    giveUpTimeoutRef.current = setTimeout(() => {
+      if (giveUpCompletedRef.current) return;
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Error
+      ).catch(() => { });
+      handleGiveUpConfirmed();
+    }, 1300);
+  };
+
+  const handleGiveUpHoldCancel = () => {
+    if (giveUpCompletedRef.current) return;
+    stopGiveUpHaptics();
+    giveUpProgress.value = withTiming(0, { duration: 180 });
+  };
+
+  const giveUpFillStyle = useAnimatedStyle(() => ({
+    width: `${giveUpProgress.value * 100}%`,
+  }));
+  const giveUpTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      giveUpProgress.value,
+      [0, 1],
+      ['#000000', '#ffffff'],
+    ),
+  }));
+
+
   if (sessionEnded) {
     const elapsedSeconds = trip.duration - remainingSeconds;
+    const progress =
+      trip.duration > 0 ? Math.min(1, Math.max(0, elapsedSeconds / trip.duration)) : 0;
+    const travelledDistanceKm = Math.floor(trip.distance_km * progress);
+    const tasksCompletedCount = completedTaskIds.size;
+    const totalTasks = tasks.length;
+
     return (
-      <SafeAreaView className="flex-1 bg-background">
-        <Animated.View entering={FadeIn.duration(600)} className="flex-1 items-center justify-center px-6">
-          {/* Completion Animation */}
-          <Animated.View entering={FadeInDown.delay(200)} className="items-center mb-8">
-            <View className="mb-6">
-              <Image
-                source={require('../../assets/icons/ios-light.png')}
-                style={{ width: 60, height: 60 }}
-               
-              />
+      <SafeAreaView className="flex-1 bg-black">
+        <Animated.View
+          entering={FadeIn.duration(600)}
+          className="flex-1 items-center justify-center px-6"
+        >
+          {/* Mission debrief */}
+          <Animated.View
+            entering={FadeInDown.delay(180)}
+            className="w-full mb-8 rounded-2xl bg-gradient-to-b from-slate-900/90 to-secondary/95 border border-white/10 px-5 py-6"
+          >
+            <View className="items-center mb-4">
+              <View className="w-16 h-16 rounded-full bg-primary/20 border border-primary/40 items-center justify-center mb-3">
+                <MaterialCommunityIcons name="rocket-launch-outline" size={30} color="#a855f7" />
+              </View>
+              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.16em]">
+                Journey complete
+              </Text>
+              <Text className="text-white font-primary-bold text-3xl mt-2 text-center">
+                Mission debrief
+              </Text>
+              <Text className="text-gray-400 font-primary-medium text-base mt-2 text-center">
+                {trip.from} → {trip.to}
+              </Text>
             </View>
-            <Text className="text-white font-primary-bold text-3xl mb-3 text-center">
-              Journey Complete!
-            </Text>
-            <Text className="text-gray-400 font-primary-medium text-lg text-center">
-              {trip.from} → {trip.to}
-            </Text>
-            <View className="flex-row items-center justify-center mt-3 gap-4">
-              <View className="flex-row items-center bg-primary/10 border border-primary/30 px-4 py-2 rounded-xl">
-                <MaterialCommunityIcons name="rocket" size={20} color="#818CF8" />
-                <Text className="text-primary font-primary-bold text-base ml-2">
-                  {formatDistance(trip.distance_km)}
+
+            <View className="flex-row items-center justify-between mt-4">
+              <View className="flex-1 mr-2 rounded-xl bg-black/80 border border-white/30 px-3 py-2">
+                <Text className="text-gray-400 font-primary-medium text-[11px] tracking-[0.14em] uppercase">
+                  Distance flown
+                </Text>
+                <View className="flex-row items-center mt-1.5">
+                  <MaterialCommunityIcons name="rocket" size={18} color="#818CF8" />
+                  <Text className="text-primary font-primary-bold text-lg ml-1.5">
+                    {formatDistanceWithUnit(travelledDistanceKm, distanceUnit)}
+                  </Text>
+                </View>
+              </View>
+              <View className="flex-1 ml-2 rounded-xl bg-black/80 border border-white/30 px-3 py-2">
+                <Text className="text-gray-400 font-primary-medium text-[11px] tracking-[0.14em] uppercase">
+                  Time in orbit
+                </Text>
+                <View className="flex-row items-center mt-1.5">
+                  <Ionicons name="time-outline" size={18} color="#9CA3AF" />
+                  <Text className="text-gray-100 font-primary-bold text-lg ml-1.5">
+                    {formatTime(elapsedSeconds)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View className="mt-4 rounded-xl bg-black/80 border border-white/30 px-3 py-4 flex-row items-center justify-between">
+              <View>
+                <Text className="text-gray-400 font-primary-medium text-sm tracking-[0.16em] uppercase">
+                  Mission tasks
                 </Text>
               </View>
-              <View className="flex-row items-center bg-primary/10 border border-primary/30 px-4 py-2 rounded-xl">
-                <Ionicons name="time-outline" size={20} color="#9CA3AF" />
-                <Text className="text-gray-300 font-primary-bold text-base ml-2">
-                  {formatTime(elapsedSeconds)}
+              <View>
+                <Text className="text-gray-100 font-primary-semibold text-sm">
+                  {tasksCompletedCount}/{totalTasks} completed
                 </Text>
               </View>
+
             </View>
           </Animated.View>
 
           {/* Tasks Summary */}
-          <Animated.View entering={FadeInDown.delay(400)} className="w-full mb-8">
-            <Text className="text-white font-primary-semibold text-lg mb-4">
-              Mark tasks as complete ({completedTaskIds.size}/{tasks.length})
+          <Animated.View entering={FadeInDown.delay(360)} className="w-full mb-8">
+            <Text className="text-white font-primary-semibold text-lg mb-2">
+              Log what you finished
+            </Text>
+            <Text className="text-gray-500 font-primary-medium text-xs mb-4">
+              Tap tasks you actually completed during this flight.
             </Text>
             {tasks.map((task) => {
               const isCompleted = completedTaskIds.has(task.id);
+              const list = lists.find((l) => l.id === task.list_id);
+
               return (
                 <TouchableOpacity
                   key={task.id}
                   onPress={() => handleToggleTaskComplete(task.id)}
-                  className={`mb-3 p-4 rounded-xl border flex-row items-center ${
-                    isCompleted ? 'bg-primary/10 border-primary' : 'bg-gray-900/50 border-gray-800'
-                  }`}
+                  className={`mb-3 p-4 rounded-2xl`}
                   activeOpacity={0.7}
                 >
-                  <View
-                    className={`w-6 h-6 rounded-full border-2 mr-3 items-center justify-center ${
-                      isCompleted ? 'border-primary bg-primary' : 'border-gray-700'
-                    }`}
-                  >
-                    {isCompleted && (
-                      <Text className="text-background font-primary-bold text-sm">✓</Text>
-                    )}
+                  <View className="flex-row items-start">
+                    {/* Completion ring, matching TaskList style */}
+                    <View
+                      style={{
+                        borderColor: '#9CA3AF',
+                        borderWidth: 2,
+                      }}
+                      className="w-6 h-6 rounded-lg mr-3 items-center justify-center overflow-hidden"
+                    >
+                      {isCompleted && (
+                        <View style={{ backgroundColor: list?.color || '#4B5563' }} className="absolute inset-0 items-center justify-center">
+                          <Ionicons name="checkmark" size={14} color="white" />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Task content */}
+                    <View className="flex-1">
+                      <Text
+                        className={`font-primary-semibold text-sm ${isCompleted ? 'text-gray-400 line-through' : 'text-white'
+                          }`}
+                        numberOfLines={2}
+                      >
+                        {task.title}
+                      </Text>
+
+                      <View className="flex-row items-center mt-1 flex-wrap">
+                        {/* List badge */}
+                        {list && (
+                          <View
+                            className="flex-row items-center px-2 py-0.5 rounded-full mr-2"
+                            style={{
+                              backgroundColor: `${list.color ?? '#4B5563'}33`,
+                            }}
+                          >
+                            {list.icon && (
+                              <Ionicons
+                                name={list.icon as any}
+                                size={11}
+                                color={list.color || '#E5E7EB'}
+                              />
+                            )}
+                            <Text
+                              className="ml-1 text-[10px] font-primary-medium"
+                              style={{
+                                color: list.color || '#E5E7EB',
+                              }}
+                            >
+                              {list.title}
+                            </Text>
+                          </View>
+                        )}
+                        {/* Priority badge */}
+                        <View
+                          className={`flex-row items-center  py-0.5 rounded-full mr-2`}
+                        >
+                          <Text
+                            className="text-[10px] font-primary-medium capitalize"
+                            style={{
+                              color:
+                                task.priority === 'high'
+                                  ? '#ef4444'
+                                  : task.priority === 'medium'
+                                    ? '#eab308'
+                                    : task.priority === 'low'
+                                      ? '#22c55e'
+                                      : '#9CA3AF',
+                            }}
+                          >
+                            {task.priority}
+                          </Text>
+                        </View>
+
+
+
+
+                      </View>
+                    </View>
                   </View>
-                  <Text className={`flex-1 font-primary-medium ${isCompleted ? 'text-white' : 'text-gray-400'}`}>
-                    {task.title}
-                  </Text>
                 </TouchableOpacity>
               );
             })}
           </Animated.View>
 
           {/* Action Buttons */}
-          <Animated.View entering={FadeInDown.delay(600)} className="w-full gap-3">
+          <Animated.View entering={FadeInDown.delay(520)} className="w-full gap-3">
             <TouchableOpacity
               onPress={handleFinishAndMarkComplete}
               disabled={completedTaskIds.size === 0}
-              className={`py-4 rounded-xl items-center ${
-                completedTaskIds.size > 0 ? 'bg-primary' : 'bg-gray-800'
-              }`}
+              className={`py-4 rounded-2xl items-center ${completedTaskIds.size > 0 ? 'bg-white' : 'bg-gray-400'
+                }`}
               activeOpacity={0.8}
             >
               <Text
-                className={`font-primary-bold text-base ${
-                  completedTaskIds.size > 0 ? 'text-background' : 'text-gray-600'
-                }`}
+                className={`font-primary-bold text-base text-black`}
               >
-                Mark Complete & Finish
+                Save journey & tasks
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleFinishWithoutMarking}
-              className="py-4 rounded-xl items-center bg-gray-900/50 border border-gray-800"
+              className="py-4 rounded-2xl items-center bg-gray-900/70 border border-gray-700"
               activeOpacity={0.8}
             >
-              <Text className="text-gray-400 font-primary-semibold text-base">Finish Without Marking</Text>
+              <Text className="text-gray-300 font-primary-semibold text-base">
+                Skip
+              </Text>
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
@@ -456,212 +676,443 @@ export function FocusSessionScreen({
 
         {/* UI Overlay */}
         <SafeAreaView className="flex-1" style={{ backgroundColor: 'transparent' }}>
-        
-        {/* Progress Track - Right Side */}
-        <View className="absolute right-6 top-28 bottom-16" style={{ width: 4 }}>
-          {/* Track Background */}
-          <View className="absolute inset-0 bg-gray-800/50 rounded-full" />
-          
-          {/* Progress Fill */}
-          <Animated.View 
-            className="absolute bottom-0 left-0 right-0 bg-primary rounded-full"
-            style={{
-              height: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
-            }}
-          />
-          
-          {/* Rocket Icon */}
-          <Animated.View 
-            className="absolute -left-3"
-            style={{
-              bottom: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
-              transform: [{ translateY: 10 }],
-            }}
-          >
-            <Text className="text-3xl pr-12">
-              <MaterialCommunityIcons name="rocket-outline" size={24} color="white" />
-            </Text>
-          </Animated.View>
-          
-          {/* Start Point */}
-          <View className="" />
-          
-          {/* End Point */}
-          <View className="">
-            <Text className="absolute -top-7 -left-3 text-xl pr-12">
-              <Ionicons name="planet-outline" size={24} color="white" />
-            </Text>
-          </View>
-        </View>
-        
-        {/* Header with Timer */}
-        <Animated.View entering={FadeInDown} className="px-6 py-4">
-          <View className="flex-row items-star justify-between">
-            {/* Left Side - Pause, Mute and Exit */}
-            <View className="flex-col gap-2">
-              <TouchableOpacity
-                onPress={handlePause}
-                className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
-                activeOpacity={0.7}
-              >
-                <Ionicons name={isPaused ? 'play' : 'pause'} size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                onPress={handleMuteToggle}
-                className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
-                activeOpacity={0.7}
-              >
-                <Ionicons 
-                  name={isMuted ? 'volume-mute' : 'volume-medium'} 
-                  size={24} 
-                  color={isMuted ? '#9CA3AF' : '#FFFFFF'} 
-                />
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => setShowTaskOverlay((prev) => !prev)}
-                className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={showTaskOverlay ? 'eye' : 'eye-off'}
-                  size={22}
-                  color={showTaskOverlay ? '#FFFFFF' : '#9CA3AF'}
-                />
-              </TouchableOpacity>
-              
-              {isPaused && (
+          {/* Progress Track - Right Side */}
+          <View className="absolute right-6 top-28 bottom-16" style={{ width: 4 }}>
+            {/* Track Background */}
+            <View className="absolute inset-0 bg-gray-800/50 rounded-full" />
+
+            {/* Progress Fill */}
+            <Animated.View
+              className="absolute bottom-0 left-0 right-0 bg-primary rounded-full"
+              style={{
+                height: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
+              }}
+            />
+
+            {/* Rocket Icon */}
+            <Animated.View
+              className="absolute -left-3"
+              style={{
+                bottom: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
+                transform: [{ translateY: 10 }],
+              }}
+            >
+              <Text className="text-3xl pr-12">
+                <MaterialCommunityIcons name="rocket-outline" size={24} color="white" />
+              </Text>
+            </Animated.View>
+
+            {/* Start Point */}
+            <View className="" />
+
+            {/* End Point */}
+            <View className="">
+              <Text className="absolute -top-7 -left-3 text-xl pr-12">
+                <Ionicons name="planet-outline" size={24} color="white" />
+              </Text>
+            </View>
+          </View>
+
+          {/* Header with Timer */}
+          <Animated.View entering={FadeInDown} className="px-6 py-4">
+            <View className="flex-row items-star justify-between">
+              {/* Left Side - Pause, Mute and Exit */}
+              <View className="flex-col gap-2">
                 <TouchableOpacity
-                  onPress={handleEndSession}
+                  onPress={handlePause}
                   className="w-12 h-12 rounded-full bg-black/50 items-center justify-center"
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="close" size={28} color="#EF4444" />
+                  <Ionicons name={isPaused ? 'play' : 'pause'} size={24} color="#FFFFFF" />
                 </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Timer Display */}
-            <View className="flex-1 items-center">
-              <View className="bg-black/60 px-8 py-3 rounded-2xl">
-                <Text className="text-white font-primary-bold text-xl tracking-wider">
-                  Arriving in {formatRemainingTime(remainingSeconds)} 
-                </Text>
-                <Text className="text-gray-300 font-primary-medium text-sm mt-1 text-center">
-                  {isPaused ? 'PAUSED' : trip.to.toUpperCase()}
-                </Text>
               </View>
-            </View>
 
-            {/* Right Side - Empty for balance */}
-            <View className="w-12" />
-          </View>
-        </Animated.View>
-
-        {/* Distance Remaining - Bottom Left */}
-        <Animated.View
-          entering={FadeIn.delay(300)}
-          className="absolute bottom-8 left-6"
-        >
-          <View className="bg-black/60 px-4 py-2 rounded-xl border border-gray-700/30">
-            <Text className="text-gray-400 font-primary-medium text-xs">
-              Distance Left
-            </Text>
-            <Text className="text-white font-primary-bold text-lg mt-1">
-              {formatDistance(remainingDistance)}
-            </Text>
-          </View>
-        </Animated.View>
-
-        {/* Tasks drawer - swipe right to complete */}
-        {tasks.length > 0 && showTaskOverlay && (
-          <Animated.View
-            entering={FadeInLeft.delay(300)}
-            exiting={FadeOutLeft.duration(200)}
-            className="absolute left-0 top-1/2 -translate-y-1/2"
-            style={{ width: 260 }}
-          >
-            <View
-              className="rounded-r-lg rounded-l-none px-3 py-3 border border-primary/40 border-l-0"
-              style={{
-                backgroundColor: '#020617EE',
-                shadowColor: '#4F46E5',
-                shadowOpacity: 0.35,
-                shadowRadius: 18,
-                shadowOffset: { width: 0, height: 0 },
-              }}
-            >
-              <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center flex-1 pr-2">
-                  <View className="w-7 h-7 rounded-full bg-primary/20 items-center justify-center mr-2">
-                    <MaterialCommunityIcons
-                      name="gesture-swipe-right"
-                      size={16}
-                      color="#E5E7EB"
-                    />
-                  </View>
-                  <View>
-                    <Text className="text-gray-100 font-primary-semibold text-xs tracking-widest">
-                      MISSION TASKS
-                    </Text>
-                    <Text className="text-gray-500 font-primary-medium text-[10px]">
-                      Swipe right to confirm
-                    </Text>
-                  </View>
-                </View>
-                <View className="px-2 py-1 rounded-lg bg-primary/15 border border-primary/40">
-                  <Text className="text-primary font-primary-semibold text-[10px]">
-                    {completedTaskIds.size}/{tasks.length}
+              {/* Timer Display */}
+              <View className="flex-1 items-center">
+                <View className="bg-black/60 px-8 py-3 rounded-2xl">
+                  <Text className="text-white font-primary-bold text-xl tracking-wider">
+                    Arriving in {formatRemainingTime(remainingSeconds)}
+                  </Text>
+                  <Text className="text-gray-300 font-primary-medium text-sm mt-1 text-center">
+                    {isPaused ? 'PAUSED' : trip.to.toUpperCase()}
                   </Text>
                 </View>
               </View>
 
-              <View style={{ maxHeight: 150 }}>
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{ paddingRight: 4 }}
-                >
-                  {tasks.map((task) => {
-                    const isCompleted = completedTaskIds.has(task.id);
-                    if (isCompleted) return null;
-
-                    return (
-                      <Swipeable
-                        key={task.id}
-                        overshootLeft={false}
-                        overshootRight={false}
-                        onSwipeableOpen={() => handleCompleteTask(task.id)}
-                        renderLeftActions={() => (
-                          <View className="flex-1 bg-primary/40 justify-center rounded-lg ml-1 h-8">
-                            <Text className="text-background font-primary-bold text-xs pl-4 tracking-wide">
-                              Complete
-                            </Text>
-                          </View>
-                        )}
-                      >
-                        <View className="mb-2 px-3 py-2 rounded-lg bg-slate-900/95 border border-slate-700/80 flex-row items-center">
-                          <View
-                            className="w-3 h-3 rounded-lg mr-2 bg-secondary/60"
-                            
-                          />
-                          <View className="flex-1">
-                            <Text
-                              className="text-white font-primary-medium text-xs"
-                              numberOfLines={1}
-                            >
-                              {task.title}
-                            </Text>
-                          </View>
-                        </View>
-                      </Swipeable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+              {/* Right Side - Empty for balance */}
+              <View className="w-12" />
             </View>
           </Animated.View>
-        )}
+
+          {/* Distance Remaining - Bottom Left */}
+          <Animated.View
+            entering={FadeIn.delay(300)}
+            className="absolute bottom-8 left-6"
+          >
+            <View className="bg-black/60 px-4 py-2 rounded-xl border border-gray-700/30">
+              <Text className="text-gray-400 font-primary-medium text-xs">
+                Distance Left
+              </Text>
+              <Text className="text-white font-primary-bold text-lg mt-1">
+                {formatDistanceWithUnit(remainingDistance, distanceUnit)}
+              </Text>
+            </View>
+          </Animated.View>
+
+
+
+          {/* Paused overlay – blur only, no extra color */}
+          {isPaused && !sessionEnded && (
+            <Animated.View
+              entering={FadeIn.duration(500)}
+              exiting={FadeOut.duration(250)}
+              className="absolute inset-0"
+              pointerEvents="box-none"
+            >
+              <BlurView intensity={45} tint="dark" className="flex-1 bg-transparent">
+                <SafeAreaView className="flex-1">
+                  {/* Top row: left resume, right menu */}
+                  <View className="flex-row items-center justify-between px-5 pt-4">
+                    <View className="flex-row items-center gap-x-3">
+                      <TouchableOpacity
+                        onPress={handlePause}
+                        activeOpacity={0.8}
+                        className="w-[52px] h-[52px] rounded-2xl bg-white/80 items-center justify-center"
+                      >
+                        <Ionicons name="play" size={24} color="#000000" />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => {
+                          Haptics.selectionAsync().catch(() => { });
+                          setShowSoundPicker((prev) => !prev);
+                        }}
+                        onLongPress={handleMuteToggle}
+                        activeOpacity={0.8}
+                        className="w-[52px] h-[52px] rounded-2xl bg-white/80 items-center justify-center"
+                      >
+                        <Ionicons
+                          name={isMuted ? 'volume-mute' : 'volume-medium'}
+                          size={22}
+                          color="#000000"
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    {
+                      showGiveUpMenu ? (
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          onPressIn={handleGiveUpHoldStart}
+                          onPressOut={handleGiveUpHoldCancel}
+                        >
+                          <View className="rounded-full overflow-hidden bg-white">
+                            <Animated.View
+                              className="absolute top-0 bottom-0 left-0 bg-red-400"
+                              style={giveUpFillStyle}
+                            />
+                            <View className="px-5 py-3 items-center justify-center">
+                              <Animated.Text
+                                className="font-primary-semibold text-lg"
+                                style={giveUpTextStyle}
+                              >
+                                Hold to give up
+                              </Animated.Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      ) : <TouchableOpacity
+                        onPress={() => {
+                          Haptics.selectionAsync().catch(() => { });
+                          setShowGiveUpMenu((prev) => !prev);
+                        }}
+                        activeOpacity={0.8}
+                        className="w-[50px] h-[50px] rounded-2xl bg-red-500/80 items-center justify-center"
+                      >
+                        <Ionicons name="exit-outline" size={28} color="#ffffff" />
+                      </TouchableOpacity>
+                    }
+
+                  </View>
+
+                  {/* Sound picker */}
+                  {showSoundPicker && (
+                    <View className="px-5 pt-3">
+                      {/* Mute + volume pill */}
+                      <View className="flex-row items-center justify-between mb-3">
+                        <TouchableOpacity
+                          onPress={() => {
+                            Haptics.selectionAsync().catch(() => { });
+                            setIsMuted((prev) => !prev);
+                          }}
+                          activeOpacity={0.8}
+                          className="flex-row items-center rounded-full bg-black/60 px-3 py-1.5 border border-gray-700"
+                        >
+                          <Ionicons
+                            name={isMuted ? 'volume-mute' : 'volume-medium'}
+                            size={16}
+                            color="#e5e7eb"
+                          />
+                          <Text className="ml-2 text-xs font-primary-medium text-gray-200">
+                            {isMuted ? 'Ambient sound off' : 'Ambient sound on'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Volume slider removed per latest request */}
+                      </View>
+
+                      <View className="flex-row gap-x-3">
+                        {/* Space rumble card */}
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={async () => {
+                            Haptics.selectionAsync().catch(() => { });
+                            setAmbientSoundKey('space-rumble');
+                            setIsMuted(false);
+                            try {
+                              await AsyncStorage.setItem(
+                                'focus_ambient_sound',
+                                'space-rumble'
+                              );
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                          className={`flex-1 rounded-2xl border px-3 py-3 flex-row items-center justify-between ${ambientSoundKey === 'space-rumble'
+                            ? 'bg-white border-white'
+                            : 'bg-black/60 border-gray-700'
+                            }`}
+                        >
+                          <View className="flex-row items-center gap-x-2">
+                            <View className="w-8 h-8 rounded-xl bg-black/80 items-center justify-center">
+                              <MaterialCommunityIcons
+                                name="rocket-launch-outline"
+                                size={18}
+                                color={ambientSoundKey === 'space-rumble' ? '#ffffff' : '#9CA3AF'}
+                              />
+                            </View>
+                            <View>
+                              <Text
+                                className={`font-primary-semibold text-xs ${ambientSoundKey === 'space-rumble'
+                                  ? 'text-black'
+                                  : 'text-gray-200'
+                                  }`}
+                              >
+                                Space flight
+                              </Text>
+                              <Text
+                                className={`font-primary-medium text-[11px] ${ambientSoundKey === 'space-rumble'
+                                  ? 'text-gray-700'
+                                  : 'text-gray-400'
+                                  }`}
+                              >
+                                cabin rumble
+                              </Text>
+                            </View>
+                          </View>
+                          <View className="flex-row items-center px-2 py-1 rounded-full bg-black/10">
+                            <Text
+                              className={`text-[11px] font-primary-semibold ${ambientSoundKey === 'space-rumble'
+                                ? 'text-black'
+                                : 'text-gray-400'
+                                }`}
+                            >
+                              {ambientSoundKey === 'space-rumble' ? 'ON' : 'OFF'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        {/* Rain drops card */}
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={async () => {
+                            Haptics.selectionAsync().catch(() => { });
+                            setAmbientSoundKey('rain-drops');
+                            setIsMuted(false);
+                            try {
+                              await AsyncStorage.setItem(
+                                'focus_ambient_sound',
+                                'rain-drops'
+                              );
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                          className={`flex-1 rounded-2xl border px-3 py-6 flex-row items-center justify-between ${ambientSoundKey === 'rain-drops'
+                            ? 'bg-white border-white'
+                            : 'bg-black/60 border-gray-700'
+                            }`}
+                        >
+                          <View className="flex-row items-center gap-x-2">
+                            <View className="w-8 h-8 rounded-xl bg-black/80 items-center justify-center">
+                              <MaterialCommunityIcons
+                                name="weather-rainy"
+                                size={18}
+                                color={ambientSoundKey === 'rain-drops' ? '#ffffff' : '#9CA3AF'}
+                              />
+                            </View>
+                            <View>
+                              <Text
+                                className={`font-primary-semibold text-xs ${ambientSoundKey === 'rain-drops'
+                                  ? 'text-black'
+                                  : 'text-gray-200'
+                                  }`}
+                              >
+                                Rain drift
+                              </Text>
+                              <Text
+                                className={`font-primary-medium text-[11px] ${ambientSoundKey === 'rain-drops'
+                                  ? 'text-gray-700'
+                                  : 'text-gray-400'
+                                  }`}
+                              >
+                                Soft rainfall
+                              </Text>
+                            </View>
+                          </View>
+                          <View className="flex-row items-center px-2 py-1 rounded-full bg-black/10">
+                            <Text
+                              className={`text-[11px] font-primary-semibold ${ambientSoundKey === 'rain-drops'
+                                ? 'text-black'
+                                : 'text-gray-400'
+                                }`}
+                            >
+                              {ambientSoundKey === 'rain-drops' ? 'ON' : 'OFF'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Center message */}
+                  <View className="flex-1 items-center justify-center">
+                    <Text className="text-gray-300 font-primary-semibold text-base mb-1">
+                      Paused
+                    </Text>
+                    <Text className="text-white font-primary-bold text-3xl">
+                      {formatTime(remainingSeconds)}
+                    </Text>
+                  </View>
+
+                  {/* Tasks overview while paused */}
+                  <View className="px-6 pb-4 max-h-56">
+                    <Text className="text-gray-400 font-primary-medium text-xs mb-2">
+                      Mission objectives ({tasks.length})
+                    </Text>
+                    <ScrollView
+                      showsVerticalScrollIndicator={false}
+                      contentContainerStyle={{ paddingBottom: 4 }}
+                    >
+                      {tasks.map((task) => {
+                        const isCompleted = completedTaskIds.has(task.id);
+                        const list = lists.find((l) => l.id === task.list_id);
+                        const dueLabel = task.due_date
+                          ? formatDueDate(new Date(task.due_date))
+                          : null;
+
+                        return (
+                          <TouchableOpacity
+                            key={task.id}
+                            onPress={() => handleToggleTaskComplete(task.id)}
+                            activeOpacity={0.8}
+                            className="mb-2 px-3 py-3 rounded-2xl bg-black/50 border border-gray-700/60"
+                          >
+                            <View className="flex-row items-start">
+                              <View
+                                className={`w-5 h-5 rounded-full border-2 mr-3 mt-0.5 items-center justify-center ${isCompleted ? 'border-primary bg-primary' : 'border-gray-600'
+                                  }`}
+                              >
+                                {isCompleted && (
+                                  <Text className="text-background font-primary-bold text-xs">
+                                    ✓
+                                  </Text>
+                                )}
+                              </View>
+                              <View className="flex-1">
+                                <Text
+                                  className={`font-primary-semibold text-sm ${isCompleted ? 'text-gray-400 line-through' : 'text-white'
+                                    }`}
+                                  numberOfLines={2}
+                                >
+                                  {task.title}
+                                </Text>
+                                <View className="flex-row items-center mt-1">
+                                  {list && (
+                                    <View
+                                      className="flex-row items-center px-2 py-0.5 rounded-full mr-2"
+                                      style={{
+                                        backgroundColor: `${list.color ?? '#4B5563'}33`,
+                                      }}
+                                    >
+                                      {list.icon && (
+                                        <Ionicons
+                                          name={list.icon as any}
+                                          size={11}
+                                          color={list.color || '#E5E7EB'}
+                                        />
+                                      )}
+                                      <Text
+                                        className="ml-1 text-[10px] font-primary-medium"
+                                        style={{
+                                          color: list.color || '#E5E7EB',
+                                        }}
+                                      >
+                                        {list.title}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {dueLabel && (
+                                    <View className="flex-row items-center">
+                                      <Ionicons
+                                        name="time-outline"
+                                        size={11}
+                                        color="#9CA3AF"
+                                      />
+                                      <Text className="ml-1 text-[10px] font-primary-medium text-gray-400">
+                                        {dueLabel}
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+
+                  {/* Bottom metrics */}
+                  <View className="px-6 pb-8">
+                    <View className="flex-row items-center justify-between">
+                      <View>
+                        <Text className="text-gray-400 font-primary-medium text-xs mb-1">
+                          Time Remaining
+                        </Text>
+                        <Text className="text-white font-primary-bold text-2xl">
+                          {Math.max(0, Math.floor(remainingSeconds / 60))}{' '}
+                          <Text className="text-gray-300 text-base">min</Text>
+                        </Text>
+                      </View>
+
+                      <View className="items-end">
+                        <Text className="text-gray-400 font-primary-medium text-xs mb-1">
+                          Distance Remaining
+                        </Text>
+                        <Text className="text-white font-primary-bold text-2xl">
+                          {formatDistanceWithUnit(remainingDistance, distanceUnit)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+
+                </SafeAreaView>
+              </BlurView>
+            </Animated.View>
+          )}
 
         </SafeAreaView>
       </View>

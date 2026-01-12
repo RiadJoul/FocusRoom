@@ -1,50 +1,129 @@
-# Welcome to your Expo app 👋
+# FocusRoom – Space‑Themed Deep Work Companion
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+FocusRoom is an iOS‑only focus app built with Expo and Supabase. It combines a space‑flight theme (2D map + 3D cockpit) with streaks, blocking distracting apps via Screen Time, and a task system designed for recurring missions.
 
-## Get started
+This repo contains the full React Native client, Supabase integration, and Edge Functions used in production.
 
-1. Install dependencies
+## Feature Overview
+
+- Space‑flight focus sessions (2D map or 3D desk/cockpit view).
+- Task lists with per‑list color/icon, recurring tasks, and day‑based views.
+- App blocking during focus sessions using `react-native-device-activity` + Screen Time shields.
+- Daily notification reminders and “trial ending soon” push via Supabase Edge Functions.
+- Premium subscription via RevenueCat with a 7‑day yearly trial.
+- Supabase‑backed analytics for focus sessions and simple Focus Health score.
+
+## Tech Stack
+
+- **App:** Expo Router, React Native, TypeScript, NativeWind.
+- **Backend:** Supabase (Postgres, Auth, Edge Functions).
+- **Billing:** RevenueCat (iOS only).
+- **Notifications:** Expo Notifications + Supabase cron functions.
+- **State:** Zustand stores for tasks, lists, sessions, and user.
+
+## Running the App Locally
+
+1. Install dependencies:
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. Configure environment variables:
+
+   Create a `.env` file (or use `app.config.ts` / `app.json` env) with:
+
+   - `EXPO_PUBLIC_SUPABASE_URL`
+   - `EXPO_PUBLIC_SUPABASE_KEY` (anon key)
+   - `EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY`
+
+3. Start the dev client:
 
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+4. iOS:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+   - Use `npx expo run:ios` to build the development client.
+   - Make sure iOS native targets (main app + Screen Time extensions) have valid signing and App Group configured.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Supabase Integration
 
-## Get a fresh project
+- Client is initialized in `lib/supabase.ts` using the anon key and AsyncStorage for auth persistence.
+- Core data models:
+  - `tasks`, `lists`, `focus_sessions`, `users`.
+- Stores:
+  - `lib/stores/taskStore.ts` – fetch/add/update/delete tasks, create recurring tasks, call RPC `check_and_generate_recurring_tasks`.
+  - `lib/stores/listStore.ts` – list CRUD.
+  - `lib/stores/sessionStore.ts` – session logging + Focus Health stats.
+- On startup (`app/_layout.tsx`), we:
+  - Restore the Supabase session.
+  - Fetch the `users` row and hydrate `useUserStore`.
 
-When you're ready, run:
+### Performance Notes
 
-```bash
-npm run reset-project
-```
+- All queries are scoped by `user_id` and paginated via `order('created_at')`.
+- Deleting a list now bulk‑deletes its tasks server‑side (`removeTasksByList`) instead of one delete per task.
+- Heavy recurring‑task logic lives in a Supabase RPC; the client just triggers it and refreshes.
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## RevenueCat & Premium
 
-## Learn more
+- RevenueCat is configured once in `app/_layout.tsx`, then `logIn(user.id)` is called when a Supabase user is known.
+- Supabase is the source of truth for premium:
+  - `users.is_premium`, `users.on_trial`, `users.trial_ends_at` are updated by a **RevenueCat → Supabase** webhook Edge Function.
+  - Client reads `user.is_premium` for gating features.
+- Premium sync helpers:
+  - `lib/hooks/usePremiumStatus.ts` – update premium flag and local store.
+  - `lib/hooks/usePremiumSync.ts` – optional client‑side sync with RevenueCat.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Notifications & Cron
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Supabase Edge Functions handle scheduled background work:
 
-## Join the community
+- **Daily motivation notification**
+  - Reads `users` with `notification_enabled = true` and timezone/hour match.
+  - Sends a single Expo push per user with motivational copy.
 
-Join our community of developers creating universal apps.
+- **Trial‑ending reminder**
+  - Reads `users` where `on_trial = true`, `is_premium = true` and `trial_ends_at` 12–36h from now.
+  - Sends an Expo push: “Your FocusRoom Pro trial ends tomorrow…”.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+All functions use the Supabase **service role key** only on the server; the client never sees it.
+
+## iOS Screen Time Integration
+
+- Uses `react-native-device-activity` to:
+  - Request Screen Time / Family Controls permission.
+  - Start a blocking session when focus mode begins.
+- The shield UI is customized via:
+  - A native ShieldConfiguration extension in `targets/ShieldConfiguration`.
+  - `updateShield` call in `app/_layout.tsx` with app‑group logo.
+
+## Development Notes
+
+- Routing lives under `app/` using Expo Router.
+- Focus session UI and 3D model:
+  - `components/focus/FocusSessionScreen.tsx`
+  - `components/focus/Space3DViewer.tsx`
+- Task and list UI:
+  - `components/home/*`
+  - Home screen: `app/(tabs)/index.tsx`
+  - Cockpit/stats/profile: `app/(tabs)/cockpit.tsx`
+
+## Scripts
+
+- `npm start` – Expo dev server.
+- `npm run ios` – run on iOS via `expo run:ios`.
+- `npm run android` – Android build (unused for production today).
+- `npm run lint` – ESLint via Expo config.
+
+## Scaling Checklist (Current Status)
+
+- Optimized main Supabase queries for per‑user access; bulk delete implemented for list removal.
+- Webhooks and cron functions do O(1) work per event and never expose service role keys to the client.
+- Notifications are sent from background functions, not in hot user flows.
+- For future growth:
+  - Add/verify DB indexes on `{user_id, created_at}` for `tasks`, `lists`, and `focus_sessions`.
+  - Batch Expo push sends in functions if the user base becomes very large.
+  - Increase Supabase log retention + monitor function latency. 

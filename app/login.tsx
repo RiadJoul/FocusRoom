@@ -56,8 +56,8 @@ export default function Login() {
             }
           });
 
-        // Navigate to tabs after setting user (always navigate)
-        router.replace('/(tabs)' as any);
+        // Navigate to post-login onboarding once, then tabs
+       router.replace('/post-login-onboarding' as any);
       } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         useUserStore.getState().clearUser();
       }

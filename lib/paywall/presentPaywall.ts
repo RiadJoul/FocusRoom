@@ -2,10 +2,12 @@ import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import { analytics, Events } from '@/lib/analytics';
 import { getPlanTypeFromRevenueCat } from '@/lib/revenuecat';
 import { updatePremiumStatus } from '@/lib/hooks/usePremiumStatus';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
 
 type PaywallSource =
   | 'root_layout_trial'
-  | 'profile_screen'
+  | 'cockpit_screen'
   | 'floating_recurring_button'
   | 'task_selection_modal'
   | string;
@@ -58,11 +60,28 @@ export async function presentPaywallOnce(
         });
 
         await updatePremiumStatus(true);
+
+        // After a successful purchase, show the premium intro
+        try {
+          router.push('/premium-intro' as any);
+        } catch (err) {
+          console.warn('Failed to navigate to premium intro after purchase', err);
+        }
+
         return true;
       }
 
       case PAYWALL_RESULT.RESTORED:
         await updatePremiumStatus(true);
+        try {
+          const seenIntro = await AsyncStorage.getItem('hasSeenPremiumIntro');
+          if (!seenIntro) {
+            await AsyncStorage.setItem('hasSeenPremiumIntro', 'true');
+            router.push('/premium-intro' as any);
+          }
+        } catch (err) {
+          console.warn('Failed to navigate to premium intro after restore', err);
+        }
         return true;
 
       default:
@@ -73,4 +92,3 @@ export async function presentPaywallOnce(
     return false;
   }
 }
-

@@ -21,6 +21,14 @@ import { useUserStore } from '../lib/stores/userStore';
 import { supabase } from '../lib/supabase';
 import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+  updateShield,
+  getFamilyActivitySelectionId,
+  unblockSelection,
+  ShieldConfiguration,
+} from 'react-native-device-activity';
+import { KochavaTracker, KochavaTrackerLogLevel } from 'react-native-kochava-tracker';
+
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
@@ -76,7 +84,11 @@ export default function RootLayout() {
   const [isOffline, setIsOffline] = useState(false);
 
   const REVENUECAT_APPLE_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
+  const KOCHAVA_APP_GUID = process.env.EXPO_PUBLIC_KOCHAVA_APP_GUID as string;
+
   const [isRevenueCatReady, setIsRevenueCatReady] = useState(false);
+  const [hasCheckedPaywall, setHasCheckedPaywall] = useState(false);
+  const [hasCheckedKochavaAttribution, setHasCheckedKochavaAttribution] = useState(false);
 
   // Configure RevenueCat once on mount
   useEffect(() => {
@@ -85,6 +97,69 @@ export default function RootLayout() {
       Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
       setIsRevenueCatReady(true);
     }
+  }, []);
+
+  // Configure Kochava once on mount (iOS only)
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    try {
+      // Register iOS App GUID and start the tracker
+      KochavaTracker.instance.setLogLevel(KochavaTrackerLogLevel.Info);
+      KochavaTracker.instance.registerIosAppGuid(KOCHAVA_APP_GUID);
+      KochavaTracker.instance.start();
+      console.log('✅ Kochava tracker started');
+    } catch (err) {
+      console.warn('Failed to start Kochava tracker', err);
+    }
+  }, []);
+
+  // Configure Screen Time shield UI once (iOS only)
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    try {
+      const shieldConfig = {
+        title: '🔒 {applicationOrDomainDisplayName} \n is blocked',
+        subtitle: "You're focusing! Stay on track.",
+        iconSystemName: 'moon.stars.fill',
+        iconAppGroupRelativePath: 'shield/logo.png',
+      };
+
+      const shieldActions = {
+        primary: {
+          behavior: 'close' as const,
+        },
+      };
+
+      updateShield(shieldConfig as ShieldConfiguration, shieldActions as any);
+    } catch (err) {
+      console.warn('Failed to configure Screen Time shield UI', err);
+    }
+  }, []);
+
+  // Safety: on app launch, ensure any FocusRoom-blocked apps are unblocked
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const ensureAppsUnblockedOnLaunch = async () => {
+      try {
+        const value = await AsyncStorage.getItem('block_apps_enabled');
+        if (value !== 'true') return;
+
+        const selectionToken = getFamilyActivitySelectionId('focusroom_block_apps');
+        if (selectionToken) {
+          unblockSelection(
+            { activitySelectionId: 'focusroom_block_apps' },
+            'appLaunch',
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to unblock apps on app launch', err);
+      }
+    };
+
+    ensureAppsUnblockedOnLaunch();
   }, []);
 
   // Link RevenueCat customer to Supabase user.id (app_user_id)
@@ -100,6 +175,19 @@ export default function RootLayout() {
 
     logInToRevenueCat();
   }, [isRevenueCatReady, user?.id]);
+
+  // Link Kochava identity to Supabase user.id so installs/events can be tied to the user.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!user?.id) return;
+
+    try {
+      KochavaTracker.instance.registerIdentityLink('user_id', user.id);
+      KochavaTracker.instance.registerDefaultEventUserId(user.id);
+    } catch (err) {
+      console.warn('Failed to register Kochava identity link', err);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -133,10 +221,87 @@ export default function RootLayout() {
     initServices();
   }, []);
 
+  // Soft paywall surfacing: show every 2 hours for non-premium users on app open
+  useEffect(() => {
+    const maybeShowPaywall = async () => {
+      if (hasCheckedPaywall) return;
+      if (!user?.id) return;
+      if (user.is_premium) return;
+
+      try {
+        // Do not show the soft paywall until the user has completed
+        // the post-login onboarding flow once.
+        const hasSeenPostLogin = await AsyncStorage.getItem('hasSeenPostLoginOnboarding');
+        if (!hasSeenPostLogin) {
+          setHasCheckedPaywall(true);
+          return;
+        }
+
+        const lastShownRaw = await AsyncStorage.getItem('paywall_last_shown_root_layout');
+        const now = Date.now();
+        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+        if (lastShownRaw) {
+          const lastShown = Number(lastShownRaw);
+          if (!Number.isNaN(lastShown) && now - lastShown < TWO_HOURS_MS) {
+            setHasCheckedPaywall(true);
+            return;
+          }
+        }
+
+        // Only here if we either never showed, or it has been >= 2 hours
+        setHasCheckedPaywall(true);
+
+        const { presentPaywallOnce } = await import('../lib/paywall/presentPaywall');
+        const didPurchase = await presentPaywallOnce({
+          userId: user.id,
+          source: 'layout',
+        });
+
+        if (!didPurchase) {
+          await AsyncStorage.setItem('paywall_last_shown_root_layout', String(now));
+        }
+      } catch (err) {
+        console.warn('Failed to maybe show paywall on root layout', err);
+        setHasCheckedPaywall(true);
+      }
+    };
+
+    maybeShowPaywall();
+  }, [user?.id, user?.is_premium, hasCheckedPaywall]);
+
   useEffect(() => {
     if (initialCheckDone) return; // Prevent re-running
 
     let mounted = true;
+
+    async function applyPendingReferralIfNeeded(userId: string, currentUserRow: any | null) {
+      try {
+        const pendingCode = await AsyncStorage.getItem('pending_referral_code');
+        if (!pendingCode) return;
+
+        // If user already has referral_code set in profile, don't overwrite
+        if (currentUserRow?.referral_code) {
+          await AsyncStorage.removeItem('pending_referral_code');
+          return;
+        }
+
+        const { error } = await supabase
+          .from('users')
+          .update({ referral_code: pendingCode })
+          .eq('id', userId);
+
+        if (!error) {
+          const existing = useUserStore.getState().user;
+          if (existing) {
+            useUserStore.getState().setUser({ ...existing, referral_code: pendingCode });
+          }
+          await AsyncStorage.removeItem('pending_referral_code');
+        }
+      } catch (err) {
+        console.warn('Failed to apply pending referral code', err);
+      }
+    }
 
     async function check() {
       try {
@@ -153,22 +318,21 @@ export default function RootLayout() {
               .eq('id', session.user.id)
               .single();
 
-            if (!error && userProfile) {
-              useUserStore.getState().setUser(userProfile);
-            } else {
-              // Fallback to auth user
-              useUserStore.getState().setUser(session.user);
-            }
+            const profileToUse = !error && userProfile ? userProfile : session.user;
+            useUserStore.getState().setUser(profileToUse);
 
+            await applyPendingReferralIfNeeded(session.user.id, userProfile);
           } catch (err) {
             console.error('Error fetching user profile on startup:', err);
             useUserStore.getState().setUser(session.user);
           }
 
+
           if (mounted) {
             setChecking(false);
             setInitialCheckDone(true);
           }
+
           router.replace('/(tabs)' as any);
           return;
         }
@@ -203,6 +367,71 @@ export default function RootLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCheckDone]); // Run only once on mount
 
+  // After initial auth/profile check, ask Kochava for install attribution once
+  // and, if a referral_code is present, store it like our own referral deep link.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!initialCheckDone) return;
+    if (hasCheckedKochavaAttribution) return;
+
+    let cancelled = false;
+
+    const applyReferralCodeFromKochava = async (code: string) => {
+      if (!code) return;
+      console.log('✅ Kochava install attribution contains referral code:', code);
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const { error } = await supabase
+            .from('users')
+            .update({ referral_code: code })
+            .eq('id', authUser.id);
+
+          if (!error) {
+            const existing = useUserStore.getState().user;
+            if (existing) {
+              useUserStore.getState().setUser({ ...existing, referral_code: code });
+            }
+          }
+        } else {
+          await AsyncStorage.setItem('pending_referral_code', code);
+        }
+      } catch (err) {
+        console.warn('Failed to apply referral code from Kochava attribution', err);
+      }
+    };
+
+    const fetchAttribution = async () => {
+      try {
+        const attribution = await KochavaTracker.instance.retrieveInstallAttribution();
+        if (cancelled) return;
+
+        // attribution.raw is an object that should contain any custom values
+        const raw: any = attribution.raw ?? {};
+        const code: string | undefined =
+          raw.referral_code ??
+          raw.referralCode ??
+          raw.ref_code;
+
+        if (code && attribution.attributed) {
+          await applyReferralCodeFromKochava(code);
+        }
+      } catch (err) {
+        console.warn('Failed to retrieve Kochava install attribution', err);
+      } finally {
+        if (!cancelled) {
+          setHasCheckedKochavaAttribution(true);
+        }
+      }
+    };
+
+    fetchAttribution();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCheckDone, hasCheckedKochavaAttribution]);
+
   // Handle deep link OAuth callback (for native builds)
   useEffect(() => {
     let lastProcessedUrl = '';
@@ -220,13 +449,12 @@ export default function RootLayout() {
         return;
       }
 
-
       // Check if it's an OAuth callback (focusroom://auth/callback or contains tokens)
-      if (url.startsWith('focusroom://')) {
+      if (url.startsWith('focusroom://auth')) {
         lastProcessedUrl = url;
 
-        let accessToken = null;
-        let refreshToken = null;
+        let accessToken: string | null = null;
+        let refreshToken: string | null = null;
 
         // Try to extract tokens from URL hash (after #)
         const hashPart = url.split('#')[1];
@@ -248,7 +476,7 @@ export default function RootLayout() {
 
         if (accessToken) {
           try {
-            const { data, error } = await supabase.auth.setSession({
+            const { error } = await supabase.auth.setSession({
               access_token: accessToken,
               refresh_token: refreshToken || '',
             });
@@ -281,16 +509,12 @@ export default function RootLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only once on mount
 
-  // when fonts are loaded and auth check finished, hide the native splash
+  // log font errors but let the animated splash decide when to hide
   useEffect(() => {
     if (fontsError) {
       console.error('Font load error:', fontsError);
     }
-
-    if ((fontsLoaded || fontsError) && !checking) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontsError, checking]);
+  }, [fontsError]);
 
 
   const handleRetryConnection = () => {
@@ -300,6 +524,13 @@ export default function RootLayout() {
     });
   };
 
+  const appIsReady = (fontsLoaded || !!fontsError) && !checking;
+
+  useEffect(() => {
+    if (!appIsReady) return;
+    SplashScreen.hideAsync().catch(() => {});
+  }, [appIsReady]);
+
   if (!fontsLoaded && !fontsError) {
     return null;
   }
@@ -307,29 +538,29 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <Stack screenOptions={
-        {
-          headerShown: false,
-          contentStyle: { backgroundColor: '#0A0A0A' },
-          animation: 'fade_from_bottom',
-        }
-      }>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        </Stack>
-      {isOffline && (
-        <View style={[StyleSheet.absoluteFillObject, offlineOverlayStyles.container]}>
-          <Text style={offlineOverlayStyles.title}>
-            You're Offline
-          </Text>
-          <Text style={offlineOverlayStyles.subtitle}>
-            FocusRoom needs an internet connection to keep everything in sync. Please reconnect to continue.
-          </Text>
-          <Pressable onPress={handleRetryConnection} style={offlineOverlayStyles.button}>
-            <Text style={offlineOverlayStyles.buttonText}>Retry</Text>
-          </Pressable>
-        </View>
-      )}
-      <StatusBar style="light" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: '#0A0A0A' },
+              animation: 'fade_from_bottom',
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          </Stack>
+          {isOffline && (
+            <View style={[StyleSheet.absoluteFillObject, offlineOverlayStyles.container]}>
+              <Text style={offlineOverlayStyles.title}>
+                You're Offline
+              </Text>
+              <Text style={offlineOverlayStyles.subtitle}>
+                FocusRoom needs an internet connection to keep everything in sync. Please reconnect to continue.
+              </Text>
+              <Pressable onPress={handleRetryConnection} style={offlineOverlayStyles.button}>
+                <Text style={offlineOverlayStyles.buttonText}>Retry</Text>
+              </Pressable>
+            </View>
+          )}
+          <StatusBar style="light" />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

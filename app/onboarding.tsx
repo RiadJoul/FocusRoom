@@ -7,18 +7,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const slides = [
     {
         question: 'Welcome aboard! 👋',
-        description: 'Your journey into deep focus begins here.',
-        buttonText: 'Hi!',
+        description: 'Let’s take back control of your focus.',
+        buttonText: 'Start',
     },
     {
-        question: 'Do you often feel distracted?',
-        highlightWord: 'distracted',
-        buttonText: 'Yes, I do.',
+        question: 'Too many unfinished tasks?',
+        highlightWord: 'unfinished',
+        buttonText: 'Yes',
     },
     {
-        question: 'Do you often find it \nhard to focus?',
-        highlightWord: 'hard to focus',
-        buttonText: 'Yes, how can i fix it?',
+        question: 'Losing focus too easily?',
+        highlightWord: 'Losing focus',
+        buttonText: 'All the time',
     },
     {
         question: "That's why we created FocusRoom",
@@ -26,6 +26,7 @@ const slides = [
         buttonText: 'Get Started',
     },
 ];
+
 
 export default function Onboarding() {
     const [index, setIndex] = useState(0);
@@ -50,9 +51,9 @@ export default function Onboarding() {
     useEffect(() => {
         const highlightWord = slides[index].highlightWord;
         const isGlowing = highlightWord === 'Hyperfocus' || highlightWord === 'FocusRoom';
-        
+
         let wavySequence: Animated.CompositeAnimation | null = null;
-        
+
         if (highlightWord && !isGlowing) {
             // Only animate wavy for non-glowing words
             wavySequence = Animated.loop(
@@ -71,7 +72,7 @@ export default function Onboarding() {
             );
             wavySequence.start();
         }
-        
+
         return () => {
             if (wavySequence) {
                 wavySequence.stop();
@@ -85,7 +86,7 @@ export default function Onboarding() {
             slides[index].highlightWord === 'FocusRoom';
 
         let glowSequence: Animated.CompositeAnimation | null = null;
-        
+
         if (isGlowing) {
             glowSequence = Animated.loop(
                 Animated.sequence([
@@ -103,7 +104,7 @@ export default function Onboarding() {
             );
             glowSequence.start();
         }
-        
+
         return () => {
             if (glowSequence) {
                 glowSequence.stop();

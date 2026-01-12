@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Easing, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons, FontAwesome } from '@expo/vector-icons';
 
 export function SpaceMapViewer() {
   const { width, height } = Dimensions.get('window');
@@ -14,9 +14,10 @@ export function SpaceMapViewer() {
   const totalHeight = mapHeight * 2;
 
   // Stable random positions for stars / nebulas / asteroids
-  const starPositionsRef = useRef<{ x: number; y: number; size: number }[] | null>(null);
+  const starPositionsRef = useRef<{ x: number; y: number; size: number; color: string }[] | null>(null);
   const nebulasRef = useRef<{ x: number; y: number; size: number; color: string }[] | null>(null);
   const asteroidsRef = useRef<{ x: number; y: number; size: number; rotation: string }[] | null>(null);
+  const planetsRef = useRef<{ x: number; y: number; size: number; color: string }[] | null>(null);
 
   // Rocket stays centered on screen
   const rocketX = width / 2;
@@ -63,10 +64,12 @@ export function SpaceMapViewer() {
 
   // Generate stars across the entire map once
   if (!starPositionsRef.current) {
-    starPositionsRef.current = Array.from({ length: 80 }, () => ({
+    const starColors = ['#FFFFFF', '#FACC15', '#60A5FA', '#A855F7'];
+    starPositionsRef.current = Array.from({ length: 110 }, () => ({
       x: Math.random() * width,
       y: Math.random() * mapHeight,
-      size: 1 + Math.random() * 2,
+      size: 1 + Math.random() * 2.2,
+      color: starColors[Math.floor(Math.random() * starColors.length)],
     }));
   }
   const starPositions = starPositionsRef.current;
@@ -75,11 +78,11 @@ export function SpaceMapViewer() {
   // Nebula positions (scattered across map)
   if (!nebulasRef.current) {
     nebulasRef.current = [
-      { x: width * 0.2, y: mapHeight * 0.2, size: 150, color: '#000000' },
-      { x: width * 0.7, y: mapHeight * 0.35, size: 120, color: '#000000' },
-      { x: width * 0.3, y: mapHeight * 0.55, size: 140, color: '#000000' },
-      { x: width * 0.6, y: mapHeight * 0.7, size: 130, color: '#000000' },
-      { x: width * 0.25, y: mapHeight * 0.85, size: 110, color: '#000000' },
+      { x: width * 0.15, y: mapHeight * 0.18, size: 180, color: '#312E81' },
+      { x: width * 0.7, y: mapHeight * 0.32, size: 150, color: '#1E3A8A' },
+      { x: width * 0.25, y: mapHeight * 0.55, size: 170, color: '#4C1D95' },
+      { x: width * 0.65, y: mapHeight * 0.7, size: 160, color: '#0F172A' },
+      { x: width * 0.3, y: mapHeight * 0.85, size: 140, color: '#0369A1' },
     ];
   }
   const nebulas = nebulasRef.current;
@@ -87,15 +90,24 @@ export function SpaceMapViewer() {
   // Asteroid positions
   if (!asteroidsRef.current) {
     asteroidsRef.current = [
-      { x: width * 0.15, y: mapHeight * 0.15, size: 8, rotation: '45deg' },
-      { x: width * 0.8, y: mapHeight * 0.28, size: 6, rotation: '30deg' },
-      { x: width * 0.4, y: mapHeight * 0.42, size: 10, rotation: '60deg' },
-      { x: width * 0.65, y: mapHeight * 0.58, size: 7, rotation: '15deg' },
-      { x: width * 0.2, y: mapHeight * 0.72, size: 9, rotation: '75deg' },
-      { x: width * 0.75, y: mapHeight * 0.88, size: 8, rotation: '40deg' },
+      { x: width * 0.12, y: mapHeight * 0.16, size: 9, rotation: '35deg' },
+      { x: width * 0.8, y: mapHeight * 0.28, size: 7, rotation: '20deg' },
+      { x: width * 0.42, y: mapHeight * 0.44, size: 11, rotation: '55deg' },
+      { x: width * 0.68, y: mapHeight * 0.6, size: 8, rotation: '10deg' },
+      { x: width * 0.2, y: mapHeight * 0.74, size: 10, rotation: '70deg' },
+      { x: width * 0.78, y: mapHeight * 0.88, size: 9, rotation: '40deg' },
     ];
   }
   const asteroids = asteroidsRef.current;
+
+  if (!planetsRef.current) {
+    planetsRef.current = [
+      { x: width * 0.18, y: mapHeight * 0.25, size: 40, color: '#F97316' },
+      { x: width * 0.75, y: mapHeight * 0.5, size: 48, color: '#38BDF8' },
+      { x: width * 0.3, y: mapHeight * 0.78, size: 36, color: '#22C55E' },
+    ];
+  }
+  const planets = planetsRef.current;
 
   const renderLayer = (offsetY: number) => (
     <View
@@ -103,7 +115,7 @@ export function SpaceMapViewer() {
         position: 'absolute',
         top: offsetY,
         left: 0,
-        width,
+        width: width,
         height: mapHeight,
       }}
     >
@@ -111,19 +123,21 @@ export function SpaceMapViewer() {
       {starPositions.map((star, index) => (
         <View
           key={`${offsetY}-star-${index}`}
-          className="absolute bg-white rounded-full"
+          className="absolute rounded-full"
           style={{
             left: star.x,
             top: star.y,
             width: star.size,
             height: star.size,
+            backgroundColor: star.color,
+            opacity: 0.9,
           }}
         />
       ))}
 
-      {/* Milky Way Effects */}
+      {/* Milky Way streaks */}
       <View
-        className="absolute w-[300px] h-[800px] bg-black rounded-[1000px]"
+        className="absolute w-[320px] h-[820px] bg-black rounded-[1000px] opacity-60"
         style={{
           left: width * 0.3,
           top: mapHeight * 0.2,
@@ -131,7 +145,7 @@ export function SpaceMapViewer() {
         }}
       />
       <View
-        className="absolute w-[250px] h-[600px] bg-black rounded-[1000px]"
+        className="absolute w-[260px] h-[620px] bg-black rounded-[1000px] opacity-50"
         style={{
           left: width * 0.5,
           top: mapHeight * 0.6,
@@ -143,13 +157,14 @@ export function SpaceMapViewer() {
       {nebulas.map((nebula, index) => (
         <View
           key={`${offsetY}-nebula-${index}`}
-          className="absolute rounded-full opacity-15"
+          className="absolute rounded-full"
           style={{
             left: nebula.x,
             top: nebula.y,
             width: nebula.size,
             height: nebula.size,
-            backgroundColor: nebula.color,
+            backgroundColor: '#000000',
+            opacity: 0.22,
           }}
         />
       ))}
@@ -158,18 +173,48 @@ export function SpaceMapViewer() {
       {asteroids.map((asteroid, index) => (
         <View
           key={`${offsetY}-asteroid-${index}`}
-          className="absolute bg-[#666]"
+          className="absolute bg-[#6B7280]"
           style={{
             left: asteroid.x,
             top: asteroid.y,
             width: asteroid.size,
             height: asteroid.size,
+            borderRadius: asteroid.size / 2,
             transform: [{ rotate: asteroid.rotation }],
           }}
         />
       ))}
 
-      
+      {/* Slow‑spinning distant planets */}
+      {planets.map((planet, index) => (
+        <Animated.View
+          key={`${offsetY}-planet-${index}`}
+          className="absolute items-center justify-center"
+          style={{
+            left: planet.x,
+            top: planet.y,
+            width: planet.size,
+            height: planet.size,
+            borderRadius: planet.size / 2,
+            borderWidth: 1,
+            borderColor: '#1F2937',
+            backgroundColor: '#020617',
+            transform: [
+              {
+                rotate: planetRotation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '360deg'],
+                }),
+              },
+            ],
+          }}
+        >
+          <View
+            className="w-[80%] h-[80%] rounded-full"
+            style={{ backgroundColor: planet.color }}
+          />
+        </Animated.View>
+      ))}
 
     
     </View>
@@ -180,7 +225,7 @@ export function SpaceMapViewer() {
       className="flex-1 bg-black"
       style={{
         // Rotate the whole scene slightly and scale up
-        transform: [{ rotate: '15deg' }, { scale: 1.3 }],
+        transform: [{ rotate: '15deg' }, { scale: 1.5 }],
       }}
     >
       {/* Space Map Background */}
@@ -192,7 +237,7 @@ export function SpaceMapViewer() {
         }}
       >
         {/* Duplicated space background for seamless looping */}
-        <View style={{ width, height: totalHeight}}>
+        <View style={{ width: width, height: totalHeight}}>
           {renderLayer(0)}
           {renderLayer(mapHeight)}
         </View>
@@ -205,17 +250,14 @@ export function SpaceMapViewer() {
           left: rocketX - 25,
           top: rocketY - 25,
           pointerEvents: 'none',
-       
+          transform: [{ rotate: '-90deg' }],
         }}
       >
-        {/* Rocket Exhaust/Trail */}
-  
         {/* Rocket */}
-        <View className="w-[50px] h-[50px] rounded-full  justify-center items-center  shadow-lg">
-          <MaterialCommunityIcons name="rocket" size={34} color="white" />
+        <View className="w-[56px] h-[56px]  justify-center items-center shadow-2xl shadow-black">
+          <FontAwesome name="space-shuttle" size={28} color="#8F8F8F" />
+          
         </View>
-
-        
       </View>
     </View>
   );

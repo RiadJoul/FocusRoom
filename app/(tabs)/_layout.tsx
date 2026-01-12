@@ -1,13 +1,20 @@
-import { FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  
+
   return (
     <Tabs
+      detachInactiveScreens={false}
+      screenListeners={() => ({
+        tabPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        },
+      })}
       screenOptions={{
         tabBarActiveTintColor: '#ffffff',
         tabBarInactiveTintColor: '#888888',
@@ -23,13 +30,13 @@ export default function TabLayout() {
         sceneStyle: {
           backgroundColor: '#0A0A0A',
         },
-        
+
         tabBarLabelStyle: {
           paddingTop: 5,
         },
       }}
     >
-      
+
       <Tabs.Screen
         name="index"
         options={{
@@ -45,10 +52,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="cockpit"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <FontAwesome5 name="user" size={24} color={color} />,
+          title: 'Cockpit',
+          tabBarIcon: ({ color }) => <FontAwesome name="space-shuttle" size={24} color={color}/>,
         }}
       />
     </Tabs>
