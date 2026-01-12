@@ -87,7 +87,7 @@ export function formatSelectedDate(selectedDay: Date, today: Date): string {
   tomorrow.setDate(tomorrow.getDate() + 1);
   
   if (isSameDay(selectedDay, tomorrow)) {
-    return "Tomorrow's";
+    return "Tomorrow's focus";
   }
   
   return selectedDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

@@ -42,7 +42,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const { data, error } = await supabase
         .from('focus_sessions')
-        .select('duration_seconds, tasks_completed, distance_km')
+        .select('duration_seconds, tasks_completed, distance_km, created_at')
         .eq('user_id', userId);
 
       if (error) throw error;
@@ -53,6 +53,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const tasksCompleted = sessions.reduce((sum, s) => sum + s.tasks_completed, 0);
       const totalDistanceKm = sessions.reduce((sum, s) => sum + (s.distance_km || 0), 0);
       const averageSessionLength = totalSessions > 0 ? totalMinutes / totalSessions : 0;
+
+      // Deep focus days: days with >= 60 minutes of focused time
+      const dayTotals = new Map<string, number>();
+      sessions.forEach((s: any) => {
+        if (!s.created_at) return;
+        const dayKey = new Date(s.created_at).toDateString();
+        const prev = dayTotals.get(dayKey) ?? 0;
+        dayTotals.set(dayKey, prev + s.duration_seconds / 60);
+      });
+      const deepFocusDays = Array.from(dayTotals.values()).filter((m) => m >= 60).length;
 
       // Calculate focus health score
       const focusHealthScore = await get().calculateFocusHealthScore(userId);
@@ -65,6 +75,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           averageSessionLength: Math.floor(averageSessionLength),
           focusHealthScore,
           totalDistanceKm: Math.floor(totalDistanceKm),
+          deepFocusDays,
         },
         isLoading: false,
       });

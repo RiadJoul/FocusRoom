@@ -2,8 +2,6 @@ import { AddTaskBottomSheet } from '@/components/home/AddTaskBottomSheet';
 import { EmptyState } from '@/components/home/EmptyState';
 import { FloatingAddButton } from '@/components/home/FloatingAddButton';
 import { Header } from '@/components/home/Header';
-import { IntroModal } from '@/components/home/IntroModal';
-import { ProgressCard } from '@/components/home/ProgressCard';
 import { RecurringTaskModal } from '@/components/home/RecurringTaskModal';
 import { TaskList } from '@/components/home/TaskList';
 import { TasksSectionHeader } from '@/components/home/TasksSectionHeader';
@@ -11,7 +9,7 @@ import { WeekCalendar } from '@/components/home/WeekCalendar';
 import { useListStore } from '@/lib/stores/listStore';
 import { useTaskStore } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
-import { getCompletedCount, getIncompleteTasks, getTasksForDay, getTopPriorityTasks } from '@/lib/utils/taskUtils';
+import { getIncompleteTasks, getTasksForDay, getTopPriorityTasks } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -48,8 +46,6 @@ export default function HomeScreen() {
   const bottomSheetRef = useRef<BottomSheet>(null);
   const recurringBottomSheetRef = useRef<BottomSheet>(null);
 
-  // Intro Modal
-  const [showIntroModal, setShowIntroModal] = useState(false);
 
   // New version alert modal
   const [showNewVersionModal, setShowNewVersionModal] = useState(false);
@@ -109,14 +105,6 @@ export default function HomeScreen() {
 
   // Check if user has seen intro modal and app version alert
   useEffect(() => {
-    const checkIntroSeen = async () => {
-      if (user?.id) {
-        const hasSeenIntro = await AsyncStorage.getItem(`hasSeenIntro_${user.id}`);
-        if (!hasSeenIntro) {
-          setShowIntroModal(true);
-        }
-      }
-    };
 
     // Show app version alert on first load after install/update
     async function checkForUpdate() {
@@ -135,7 +123,7 @@ export default function HomeScreen() {
     }
 
     checkForUpdate();
-    checkIntroSeen();
+
   }, [user?.id]);
 
   // Fetch data on mount and generate recurring tasks
@@ -153,10 +141,10 @@ export default function HomeScreen() {
   }, [user?.id]);
 
   useEffect(() => {
-        analytics.track(Events.SCREEN_VIEW, {
-          [Properties.SCREEN_NAME]: 'Tasks',
-        });
-      }, []);
+    analytics.track(Events.SCREEN_VIEW, {
+      [Properties.SCREEN_NAME]: 'Tasks',
+    });
+  }, []);
 
   // Get tasks for the selected day
   const tasksForSelectedDay = useMemo(() => {
@@ -173,10 +161,6 @@ export default function HomeScreen() {
     return getTopPriorityTasks(incompleteTasks);
   }, [incompleteTasks]);
 
-  // Calculate completed for selected day
-  const completedForSelectedDay = useMemo(() => {
-    return getCompletedCount(tasksForSelectedDay);
-  }, [tasksForSelectedDay]);
 
   // Handler for adding a task
   const handleAddTask = useCallback(async (
@@ -247,13 +231,6 @@ export default function HomeScreen() {
     [updateTask]
   );
 
-  // Handler for closing intro modal
-  const handleCloseIntroModal = useCallback(async () => {
-    if (user?.id) {
-      await AsyncStorage.setItem(`hasSeenIntro_${user.id}`, 'true');
-    }
-    setShowIntroModal(false);
-  }, [user?.id]);
 
   const handleCloseNewVersionModal = useCallback(async () => {
     if (latestVersion) {
@@ -268,99 +245,86 @@ export default function HomeScreen() {
 
 
   return (
-      <SafeAreaView className="flex-1 bg-background pt-5">
-        <ScrollView
-          className="flex-1 px-4"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header Section */}
-          <Header
-            userName={user?.full_name?.split(' ')[0] || ''}
-            selectedDay={selectedDay}
-            today={today}
-          />
+    <SafeAreaView className="flex-1 bg-background pt-5">
+      <ScrollView
+        className="flex-1 px-4"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header Section */}
+        <Header userName={user?.full_name || ''} selectedDay={selectedDay} today={today} />
 
-          {/* Week Calendar */}
-          <WeekCalendar
-            selectedDay={selectedDay}
-            today={today}
-            onDaySelect={setSelectedDay}
-          />
-
-          <ProgressCard
-                  completedCount={completedForSelectedDay}
-                  totalCount={tasksForSelectedDay.length}             />
-
-
-          {/* Today's Focus Section or Empty State */}
-          {loading ? (
-            <View className="flex-1 items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#8F8F8F" />
-              <Text className="text-gray-400 font-primary-medium mt-4">Loading tasks...</Text>
-            </View>
-          ) : incompleteTasks.length === 0 ? (
-            <EmptyState selectedDay={selectedDay} today={today} />
-          ) : (
-            
-            <View className="pt-5">
-              <TasksSectionHeader
-                selectedDay={selectedDay}
-                today={today}
-                taskCount={topTasks.length}
-              />
-
-              <TaskList
-                tasks={topTasks}
-                lists={lists}
-                onToggleComplete={toggleComplete}
-                onDeleteTask={handleDeleteTask}
-                onMoveTask={handleMoveTask}
-              />
-            </View>
-          )}
-
-          {/* Bottom Padding */}
-          <View className="h-24" />
-        </ScrollView>
-
-        {/* Intro Modal */}
-        <IntroModal
-          visible={showIntroModal}
-          onClose={handleCloseIntroModal}
+        {/* Week Calendar */}
+        <WeekCalendar
+          selectedDay={selectedDay}
+          today={today}
+          onDaySelect={setSelectedDay}
         />
 
-        <NewVersionModal
-          visible={showNewVersionModal}
-          latestVersion={latestVersion}
-          onClose={handleCloseNewVersionModal}
-        />
 
-        {/* Floating Add Button */}
-        <FloatingAddButton
-          onPress={handleOpenBottomSheet}
-          onLongPress={handleOpenRecurringSheet}
-        />
+        {/* Today's Focus Section or Empty State */}
+        {loading ? (
+          <View className="flex-1 items-center justify-center py-20">
+            <ActivityIndicator size="large" color="#8F8F8F" />
+            <Text className="text-gray-400 font-primary-medium mt-4">Loading tasks...</Text>
+          </View>
+        ) : incompleteTasks.length === 0 ? (
+          <EmptyState selectedDay={selectedDay} today={today} />
+        ) : (
 
-        {/* Bottom Sheet for Adding Task */}
-        <AddTaskBottomSheet
-          bottomSheetRef={bottomSheetRef}
-          lists={lists}
-          canCreateMoreLists={canCreateMoreLists}
-          onAddTask={handleAddTask}
-          onCreateList={handleCreateList}
-          onDeleteList={handleDeleteList}
-        />
+          <View className="pt-5">
+            <TasksSectionHeader
+              selectedDay={selectedDay}
+              today={today}
+              taskCount={topTasks.length}
+            />
 
-        {/* Recurring Task Modal */}
-        <RecurringTaskModal
-          bottomSheetRef={recurringBottomSheetRef}
-          lists={lists}
-          canCreateMoreLists={canCreateMoreLists}
-          onCreateList={handleCreateList}
-          onDeleteList={handleDeleteList}
-          onClose={() => { }}
-        />
+            <TaskList
+              tasks={topTasks}
+              lists={lists}
+              onToggleComplete={toggleComplete}
+              onDeleteTask={handleDeleteTask}
+              onMoveTask={handleMoveTask}
+            />
+          </View>
+        )}
 
-      </SafeAreaView>
+        {/* Bottom Padding */}
+        <View className="h-24" />
+      </ScrollView>
+
+
+      <NewVersionModal
+        visible={showNewVersionModal}
+        latestVersion={latestVersion}
+        onClose={handleCloseNewVersionModal}
+      />
+
+      {/* Floating Add Button */}
+      <FloatingAddButton
+        onPress={handleOpenBottomSheet}
+        onLongPress={handleOpenRecurringSheet}
+      />
+
+      {/* Bottom Sheet for Adding Task */}
+      <AddTaskBottomSheet
+        bottomSheetRef={bottomSheetRef}
+        lists={lists}
+        canCreateMoreLists={canCreateMoreLists}
+        onAddTask={handleAddTask}
+        onCreateList={handleCreateList}
+        onDeleteList={handleDeleteList}
+      />
+
+      {/* Recurring Task Modal */}
+      <RecurringTaskModal
+        bottomSheetRef={recurringBottomSheetRef}
+        lists={lists}
+        canCreateMoreLists={canCreateMoreLists}
+        onCreateList={handleCreateList}
+        onDeleteList={handleDeleteList}
+        onClose={() => { }}
+      />
+
+    </SafeAreaView>
   );
 }

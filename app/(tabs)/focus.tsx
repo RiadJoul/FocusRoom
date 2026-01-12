@@ -6,6 +6,7 @@ import { analytics, Events, Properties } from '@/lib/analytics';
 import { useSessionStore } from '@/lib/stores/sessionStore';
 import { Task, useTaskStore } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
+import { formatDistanceWithUnit } from '@/lib/utils/distance';
 import { getIncompleteTasks } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { useFocusEffect, useNavigation } from 'expo-router';
@@ -14,14 +15,13 @@ import { Image, Platform, ScrollView, Text, TouchableOpacity, View } from 'react
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as StoreReview from 'expo-store-review';
-import { TerraformingPlanet } from '@/components/focus/TerraformingPlanet';
 import {
   blockSelection,
   unblockSelection,
   getFamilyActivitySelectionId,
 } from 'react-native-device-activity';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
-import { GalaxyMap } from '@/components/focus/GalaxyMap';
+import { SimpleLineIcons, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 
 export default function FocusTab() {
   const navigation = useNavigation();
@@ -39,8 +39,12 @@ export default function FocusTab() {
   const [selectedTasks, setSelectedTasks] = useState<Task[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
   const [showTicket, setShowTicket] = useState(false);
+  const distanceUnit = useUserStore((s) => s.distanceUnit);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [blockAppsEnabled, setBlockAppsEnabled] = useState(false);
+
+  // Paywall presentation state
+  const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
 
   // session visual type
   const [sessionType, setSessionType] = useState<'3d' | 'map'>('map');
@@ -159,6 +163,13 @@ export default function FocusTab() {
     async (duration: number, completedTaskIds: string[]) => {
       if (!user?.id || !selectedTrip) return;
 
+      // Actual traveled distance based on how long the session ran
+      const progress =
+        selectedTrip.duration > 0
+          ? Math.min(1, Math.max(0, duration / selectedTrip.duration))
+          : 0;
+      const travelledDistanceKm = Math.round(selectedTrip.distance_km * progress);
+
       // Determine if this is the very first completed session (before saving).
       const wasFirstSession = !stats || stats.totalSessions === 0;
 
@@ -170,7 +181,7 @@ export default function FocusTab() {
           [Properties.SESSION_STATUS]: 'completed',
           [Properties.DURATION_SECONDS]: duration,
           [Properties.DURATION_MINUTES]: Math.floor(duration / 60),
-          [Properties.DISTANCE_KM]: selectedTrip.distance_km,
+          [Properties.DISTANCE_KM]: travelledDistanceKm,
           [Properties.TASKS_COMPLETED]: completedTaskIds.length,
           [Properties.TASKS_COUNT]: selectedTasks.length,
           session_type: sessionType === '3d' ? 'first_class' : 'economy',
@@ -182,7 +193,7 @@ export default function FocusTab() {
         // Increment user stats
         analytics.incrementProperty('total_sessions', 1);
         analytics.incrementProperty('total_minutes', Math.floor(duration / 60));
-        analytics.incrementProperty('total_distance_km', selectedTrip.distance_km);
+        analytics.incrementProperty('total_distance_km', travelledDistanceKm);
 
         // Save session to database (also refreshes stats)
         await createSession({
@@ -193,7 +204,7 @@ export default function FocusTab() {
           tasks_completed: completedTaskIds.length,
           trip_id: selectedTrip.id,
           trip_name: `${selectedTrip.from} → ${selectedTrip.to}`,
-          distance_km: selectedTrip.distance_km,
+          distance_km: travelledDistanceKm,
         });
 
         // If this was their very first session, softly ask for an App Store review on iOS.
@@ -244,12 +255,21 @@ export default function FocusTab() {
     }
   }, [toggleComplete]);
 
-  const handleOpenPremiumSpaceStation = useCallback(async () => {
-    await presentPaywallOnce({
-      userId: user?.id,
-      source: 'focus_tab_space_station',
-    });
-  }, [user?.id]);
+  async function presentPaywall(): Promise<boolean> {
+    // Prevent re-entrancy
+    if (isPresentingPaywall) return false;
+    setIsPresentingPaywall(true);
+
+    try {
+      return await presentPaywallOnce({
+        userId: user?.id,
+        source: 'focus_screen',
+      });
+    } finally {
+      setIsPresentingPaywall(false);
+    }
+  }
+
 
   if (sessionActive && selectedTrip) {
     return (
@@ -334,40 +354,232 @@ export default function FocusTab() {
           )}
         </View>
 
-        {/* <DailyMotivation stats={stats} /> */}
 
-        {/* Quick stats */}
-        {stats && (
-          <View className="mb-2 flex-row gap-3">
-            <View className="flex-1 bg-card/80 border border-white/5 rounded-2xl px-4 py-3">
-              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.18em] mb-1">
-                Focus Time
-              </Text>
-              <Text className="text-white font-primary-bold text-lg">
-                {stats.totalMinutes} min
-              </Text>
-              <Text className="text-gray-500 font-primary-medium text-xs mt-1">
-                All sessions
-              </Text>
+        {/* Terraforming planet progression */}
+        {/* Focus Stats */}
+        {stats && stats.totalSessions > 0 ? (
+          <View className="pb-6">
+            <Text className="text-lg font-primary-bold text-white ml-2 my-4">
+              Focus Statistics
+            </Text>
+
+            <View className="flex-row flex-wrap gap-3">
+              {/* Total Sessions */}
+              <View className="w-[48%] bg-card rounded-2xl p-4 items-start justify-between">
+                <View className="flex-row items-center gap-x-2 mb-3">
+                  <View className="w-8 h-8 rounded-2xl bg-indigo-500/20 items-center justify-center">
+                    <SimpleLineIcons name="rocket" size={18} color="#818CF8" />
+                  </View>
+                  <Text className="text-gray-400 font-primary-medium text-xs">
+                    Total Sessions
+                  </Text>
+                </View>
+                <Text className="text-white font-primary-bold text-2xl">
+                  {stats.totalSessions}
+                </Text>
+              </View>
+
+              {/* Total Focus Time */}
+              <View className="w-[48%] bg-card rounded-2xl p-4 items-start justify-between">
+                <View className="flex-row items-center gap-x-2 mb-3">
+                  <View className="w-8 h-8 rounded-2xl bg-emerald-500/20 items-center justify-center">
+                    <MaterialCommunityIcons
+                      name="timer-outline"
+                      size={18}
+                      color="#34D399"
+                    />
+                  </View>
+                  <Text className="text-gray-400 font-primary-medium text-xs">
+                    Total Focus Time
+                  </Text>
+                </View>
+                <Text className="text-white font-primary-bold text-2xl">
+                  {stats.totalMinutes}m
+                </Text>
+              </View>
+
+              {/* Average Session (premium) */}
+              <TouchableOpacity
+                onPress={() => !user?.is_premium && presentPaywall()}
+                activeOpacity={user?.is_premium ? 1 : 0.8}
+                className="w-[48%]"
+              >
+                <View
+                  className={`rounded-2xl p-4 items-start justify-between bg-card ${user?.is_premium ? '' : 'opacity-60'
+                    }`}
+                >
+                  <View className="flex-row items-center gap-x-2 mb-3">
+                    <View className="w-8 h-8 rounded-2xl bg-blue-500/20 items-center justify-center">
+                      <Ionicons name="stats-chart-outline" size={18} color="#60A5FA" />
+                    </View>
+                    <Text className="text-gray-400 font-primary-medium text-xs">
+                      Average Session
+                    </Text>
+                  </View>
+
+                  {user?.is_premium ? (
+                    <Text className="text-white font-primary-bold text-2xl">
+                      {stats.averageSessionLength}m
+                    </Text>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1 mt-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">
+                        •••
+                      </Text>
+                      <Ionicons name="lock-closed-outline" size={18} color="#9CA3AF" />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {/* Focus Health (premium) */}
+              <TouchableOpacity
+                onPress={() => !user?.is_premium && presentPaywall()}
+                activeOpacity={user?.is_premium ? 1 : 0.8}
+                className="w-[48%]"
+              >
+                <View
+                  className={`rounded-2xl p-4 items-start justify-between bg-card ${user?.is_premium ? '' : 'opacity-60'
+                    }`}
+                >
+                  <View className="flex-row items-center gap-x-2 mb-3">
+                    <View className="w-8 h-8 rounded-2xl bg-pink-500/20 items-center justify-center">
+                      <Ionicons name="fitness" size={18} color="#FB7185" />
+                    </View>
+                    <Text className="text-gray-400 font-primary-medium text-xs">
+                      Focus Health
+                    </Text>
+                  </View>
+
+                  {user?.is_premium ? (
+                    <View className="flex-row items-center">
+                      <Text className="text-white font-primary-bold text-2xl mr-2">
+                        {stats.focusHealthScore}
+                      </Text>
+                      <View
+                        className={`px-2 py-1 rounded-full ${stats.focusHealthScore >= 80
+                          ? 'bg-green-500/20'
+                          : stats.focusHealthScore >= 60
+                            ? 'bg-yellow-500/20'
+                            : stats.focusHealthScore >= 40
+                              ? 'bg-orange-500/20'
+                              : 'bg-red-500/20'
+                          }`}
+                      >
+                        <Text
+                          className={`text-[10px] font-primary-bold ${stats.focusHealthScore >= 80
+                            ? 'text-green-400'
+                            : stats.focusHealthScore >= 60
+                              ? 'text-yellow-400'
+                              : stats.focusHealthScore >= 40
+                                ? 'text-orange-400'
+                                : 'text-red-400'
+                            }`}
+                        >
+                          {stats.focusHealthScore >= 80
+                            ? 'Excellent'
+                            : stats.focusHealthScore >= 60
+                              ? 'Good'
+                              : stats.focusHealthScore >= 40
+                                ? 'Fair'
+                                : 'Needs Work'}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1 mt-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">
+                        •••
+                      </Text>
+                      <Ionicons name="lock-closed-outline" size={18} color="#9CA3AF" />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {/* Deep Focus Days (premium) */}
+              <TouchableOpacity
+                onPress={() => !user?.is_premium && presentPaywall()}
+                activeOpacity={user?.is_premium ? 1 : 0.8}
+                className="w-[48%]"
+              >
+                <View
+                  className={`rounded-2xl p-4 items-start justify-between bg-card ${user?.is_premium ? '' : 'opacity-60'
+                    }`}
+                >
+                  <View className="flex-row items-center gap-x-2 mb-3">
+                    <View className="w-8 h-8 rounded-2xl bg-sky-500/20 items-center justify-center">
+                      <Ionicons name="moon-outline" size={18} color="#38BDF8" />
+                    </View>
+                    <Text className="text-gray-400 font-primary-medium text-xs">
+                      Deep Focus Days
+                    </Text>
+                  </View>
+
+                  {user?.is_premium ? (
+                    <View>
+                      <Text className="text-white font-primary-bold text-2xl">
+                        {stats.deepFocusDays}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1 mt-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">
+                        •••
+                      </Text>
+                      <Ionicons name="lock-closed-outline" size={18} color="#9CA3AF" />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {/* Distance Traveled (premium) */}
+              <TouchableOpacity
+                onPress={() => !user?.is_premium && presentPaywall()}
+                activeOpacity={user?.is_premium ? 1 : 0.8}
+                className="w-[48%]"
+              >
+                <View
+                  className={`rounded-2xl p-4 items-start justify-between bg-card ${user?.is_premium ? '' : 'opacity-60'
+                    }`}
+                >
+                  <View className="flex-row items-center gap-x-2 mb-3">
+                    <View className="w-8 h-8 rounded-2xl bg-purple-500/20 items-center justify-center">
+                      <Ionicons name="planet-outline" size={18} color="#A78BFA" />
+                    </View>
+                    <Text className="text-gray-400 font-primary-medium text-xs">
+                      Distance Traveled
+                    </Text>
+                  </View>
+
+                  {user?.is_premium ? (
+                    <Text className="text-white font-primary-bold text-2xl">
+                      {formatDistanceWithUnit(stats.totalDistanceKm, distanceUnit)}
+                    </Text>
+                  ) : (
+                    <View className="flex-row items-center gap-x-1 mt-1">
+                      <Text className="text-gray-500 font-primary-bold text-lg">
+                        •••
+                      </Text>
+                      <Ionicons name="lock-closed-outline" size={18} color="#9CA3AF" />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
             </View>
-            <View className="flex-1 bg-card/80 border border-white/5 rounded-2xl px-4 py-3">
-              <Text className="text-gray-400 font-primary-medium text-[11px] uppercase tracking-[0.18em] mb-1">
-                Completed Trips
-              </Text>
-              <Text className="text-white font-primary-bold text-lg">
-                {stats.totalSessions}
-              </Text>
-              <Text className="text-gray-500 font-primary-medium text-xs mt-1">
-                Lifetime
+          </View>
+        ) : (
+          <View className="pb-6">
+            <Text className="text-lg font-primary-bold text-white mb-4">
+              Focus Statistics
+            </Text>
+            <View className="bg-card rounded-2xl p-12 gap-y-5 items-center">
+              <Text className="text-gray-200 text-lg text-center font-primary-medium">
+                No stats available yet
               </Text>
             </View>
           </View>
         )}
-
-
-
-        {/* Terraforming planet progression */}
-        {/* <GalaxyMap/> */}
       </ScrollView>
 
       {/* Task Selection Bottom Sheet */}

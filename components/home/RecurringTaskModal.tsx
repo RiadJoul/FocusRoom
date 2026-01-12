@@ -61,7 +61,6 @@ export function RecurringTaskModal({
   const [interval, setInterval] = useState('1');
   const [hasEndDate, setHasEndDate] = useState(false);
 
-
   const [showListCreator, setShowListCreator] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [showManager, setShowManager] = useState(false);
@@ -377,10 +376,10 @@ export function RecurringTaskModal({
 
                 </View>
 
-                {/* List Selection – same pill style as quick add */}
+                {/* List Selection – match onboarding list chip style */}
                 <View className="mt-4">
 
-                  <View className="flex-row flex-wrap gap-3 mb-4">
+                  <View className="flex-row flex-wrap gap-x-1 gap-y-3 mb-4">
                     {lists.map((list) => (
                       <TouchableOpacity
                         key={list.id}
@@ -398,20 +397,21 @@ export function RecurringTaskModal({
                             setSelectedListId(remaining[0]?.id ?? '');
                           }
                         }}
-                        className="px-4 py-3 rounded-full flex-row items-center gap-2"
-                        style={{
-                          backgroundColor: `${list.color}4D`,
-                        }}
+                        className={`px-4 py-2 rounded-full flex-row items-center gap-2 ${
+                          selectedListId === list.id ? 'bg-white/10' : 'bg-white/5'
+                        }`}
                         activeOpacity={0.8}
                       >
-                        <Ionicons
-                          name={list.icon as any}
-                          size={18}
-                          color={list.color}
-                          style={{
-                            opacity: selectedListId === list.id ? 1 : 0.5,
-                          }}
-                        />
+                        <View
+                          className="w-8 h-8 rounded-full items-center justify-center"
+                          style={{ backgroundColor: `${list.color}26` }}
+                        >
+                          <Ionicons
+                            name={list.icon as any}
+                            size={18}
+                            color={list.color}
+                          />
+                        </View>
                         <Text
                           className="font-primary-semibold text-base"
                           style={{
@@ -433,16 +433,14 @@ export function RecurringTaskModal({
                         setShowListCreator(true);
                       }}
 
-                      className={`px-4 py-3 rounded-full flex-row items-center gap-2 border ${canCreateMoreLists
+                      className={`px-3 py-2 rounded-full flex-row items-center gap-2 border ${canCreateMoreLists
                         ? 'bg-primary/10 border-dashed border-primary/60'
                         : 'bg-secondary/10 border-secondary'
                         }`}
                       activeOpacity={0.8}
                     >
                       <Ionicons name="add" size={16} color="#E4F964" />
-                      <Text className="text-primary font-primary-semibold text-base">
-                        New
-                      </Text>
+                    
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -451,48 +449,66 @@ export function RecurringTaskModal({
 
             {/* STEP 2: Priority + Recurrence */}
             {step === 2 && (
-              <Animated.View
-                entering={FadeIn.duration(180)}
-                exiting={FadeOut.duration(140)}
-              >
+              <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(140)}>
                 {/* Priority */}
                 <View className="mb-4">
                   <Text className="text-gray-400 font-primary-medium text-sm mb-2">
                     Priority
                   </Text>
                   <View className="flex-row gap-3">
-                    {(['low', 'medium', 'high'] as const).map((p) => (
-                      <TouchableOpacity
-                        key={p}
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setPriority(p);
-                        }}
-                        disabled={lists.length === 0}
-                        className={`flex-1 py-3 rounded-xl border items-center ${priority === p
-                          ? p === 'high'
-                            ? 'bg-red-500/10 border-red-500'
-                            : p === 'medium'
-                              ? 'bg-yellow-500/10 border-yellow-500'
-                              : 'bg-green-500/10 border-green-500'
-                          : 'bg-gray-900/50 border-gray-800'
+                    {(['low', 'medium', 'high'] as const).map((p) => {
+                      const isSelected = priority === p;
+                      const colors =
+                        p === 'high'
+                          ? { bg: 'bg-red-500/15', border: 'border-red-500/60', icon: '#f87171', label: 'Deep work' }
+                          : p === 'medium'
+                          ? { bg: 'bg-yellow-500/15', border: 'border-yellow-500/60', icon: '#facc15', label: 'Important' }
+                          : { bg: 'bg-green-500/15', border: 'border-green-500/60', icon: '#4ade80', label: 'Light lift' };
+
+                      const iconName =
+                        p === 'high'
+                          ? 'flame-outline'
+                          : p === 'medium'
+                          ? 'rocket-outline'
+                          : 'leaf-outline';
+
+                      return (
+                        <TouchableOpacity
+                          key={p}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setPriority(p);
+                          }}
+                          disabled={lists.length === 0}
+                          activeOpacity={0.8}
+                          className={`flex-1 rounded-2xl px-3 py-3 border ${
+                            isSelected ? `${colors.bg} ${colors.border}` : 'bg-gray-900/70 border-gray-800'
                           }`}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          className={`font-primary-semibold capitalize ${priority === p
-                            ? p === 'high'
-                              ? 'text-red-500'
-                              : p === 'medium'
-                                ? 'text-yellow-500'
-                                : 'text-green-500'
-                            : 'text-gray-400'
-                            }`}
                         >
-                          {p}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                          <View className="flex-row items-center gap-2">
+                            <View className="w-8 h-8 rounded-xl bg-black/70 items-center justify-center">
+                              <Ionicons
+                                name={iconName as any}
+                                size={18}
+                                color={isSelected ? colors.icon : '#9CA3AF'}
+                              />
+                            </View>
+                            <View className="flex-1">
+                              <Text
+                                className={`font-primary-semibold capitalize text-sm ${
+                                  isSelected ? 'text-white' : 'text-gray-300'
+                                }`}
+                              >
+                                {p}
+                              </Text>
+                              <Text className="text-[11px] text-gray-500 font-primary-medium">
+                                {colors.label}
+                              </Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
 
@@ -509,17 +525,17 @@ export function RecurringTaskModal({
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                           setRecurrenceType(option.type);
                         }}
-                        className={`px-4 py-3 rounded-xl border ${recurrenceType === option.type
-                          ? 'bg-primary/10 border-primary'
-                          : 'bg-gray-900/50 border-gray-800'
-                          }`}
+                        className={`px-4 py-3 rounded-xl border ${
+                          recurrenceType === option.type
+                            ? 'bg-primary/10 border-primary'
+                            : 'bg-gray-900/50 border-gray-800'
+                        }`}
                         activeOpacity={0.7}
                       >
                         <Text
-                          className={`font-primary-semibold text-sm ${recurrenceType === option.type
-                            ? 'text-primary'
-                            : 'text-gray-400'
-                            }`}
+                          className={`font-primary-semibold text-sm ${
+                            recurrenceType === option.type ? 'text-primary' : 'text-gray-400'
+                          }`}
                         >
                           {option.label}
                         </Text>
@@ -605,6 +621,8 @@ export function RecurringTaskModal({
                     )}
                   </View>
                 )}
+
+               
               </Animated.View>
             )}
 

@@ -18,6 +18,7 @@ export interface FocusStats {
   averageSessionLength: number;
   focusHealthScore: number;
   totalDistanceKm: number;
+   deepFocusDays: number;
 }
 
 export interface SessionCreateInput {

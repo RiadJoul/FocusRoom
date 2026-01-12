@@ -1,6 +1,6 @@
 import { TaskList as TaskListType } from '@/lib/stores/listStore';
 import { Task } from '@/lib/stores/taskStore';
-import { formatDueDate, formatLocalDateKey, parseLocalDateKey } from '@/lib/utils/dateUtils';
+import { formatLocalDateKey, parseLocalDateKey } from '@/lib/utils/dateUtils';
 import { getPriorityColor } from '@/lib/utils/taskUtils';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -176,7 +176,7 @@ function TaskItem({ task, list, isLastItem, onToggleComplete, onDeleteTask, onMo
   return (
     <View className={isLastItem ? '' : 'mb-3'}>
       {/* Task Card */}
-      <View className="p-4 flex-row items-center">
+      <View className="p-4 flex-row items-start ">
           {/* Completion ring */}
           <TouchableOpacity
             onPress={handleToggleCompletePress}
@@ -275,8 +275,8 @@ export function TaskList({ tasks, lists, onToggleComplete, onDeleteTask, onMoveT
           <View key={listId} className={groupIndex > 0 ? 'mt-6' : ''}>
             {/* List Header */}
             <View className="mb-3 flex-row items-center gap-2">
-              <Ionicons name={listInfo.icon as any} size={18} color={listInfo.color} />
-              <Text style={{ color: listInfo.color }} className={`font-primary-semibold text-base uppercase tracking-wider`}>
+              <Ionicons name={listInfo.icon as any} size={16} color={listInfo.color} />
+              <Text style={{ color: listInfo.color }} className={`font-primary-semibold text-sm uppercase tracking-wider`}>
                 {listInfo.title} ({listTasks.length})
               </Text>
             </View>

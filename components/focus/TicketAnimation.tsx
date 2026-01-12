@@ -4,7 +4,7 @@ import { useUserStore } from '@/lib/stores/userStore';
 import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect } from 'react';
-import { Modal, Text, View } from 'react-native';
+import { Modal, Text, View, Image } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -14,7 +14,7 @@ import Animated, {
   withSequence,
   withTiming
 } from 'react-native-reanimated';
-import { PlanetTrip } from './PlanetTrips';
+import { formatDuration, PlanetTrip } from './PlanetTrips';
 
 interface TicketAnimationProps {
   visible: boolean;
@@ -181,10 +181,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
     };
   });
 
-  const scissorsStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: scissorsX.value }],
-    opacity: cutProgress.value > 0 ? 1 : 0.3,
-  }));
+
 
   if (!visible) return null;
 
@@ -216,19 +213,20 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                 elevation: 20,
               }}
             >
-              {/* Decorative Notches */}
-              <View style={{ position: 'absolute', left: -8, top: '50%', marginTop: -58, width: 16, height: 64, backgroundColor: '#000', borderRadius: 32, zIndex: 10 }} />
-              <View style={{ position: 'absolute', right: -8, top: '50%', marginTop: -58, width: 16, height: 64, backgroundColor: '#000', borderRadius: 32, zIndex: 10 }} />
 
               {/* Top Part - Main Ticket Info */}
               <Animated.View style={leftPartStyle}>
-                {/* Header Gradient Bar */}
-                <View className={`bg-[#141514] rounded-t-2xl px-6 py-4`}>
+                {/* Header bar */}
+                <View className="bg-white rounded-t-2xl px-6 pt-4">
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center">
                       <View>
-                        <Text className="text-white/70 font-primary-medium text-xs tracking-widest">FOCUSROOM AIRWAYS</Text>
-                        <Text className="text-white font-primary-bold text-lg">BOARDING PASS</Text>
+                        <Text className="text-gray-500 font-primary-medium text-[10px] tracking-[2px]">
+                          FOCUSROOM AIRWAYS
+                        </Text>
+                        <Text className="text-black font-primary-bold text-base">
+                          BOARDING PASS
+                        </Text>
                       </View>
                     </View>
                     {/* make this view glowing */}
@@ -244,70 +242,44 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                         shadowRadius: 10,
                         elevation: 10,
                       }}>
-                        <Text className="text-white font-primary-bold text-sm tracking-wider">FIRST CLASS</Text>
+                        <Text className="text-white font-primary-bold text-sm tracking-wider">
+                          FIRST CLASS
+                        </Text>
                       </View>
                     )}
                     {!user?.is_premium && (
                       <View className="bg-white/20 px-3 py-1.5 rounded-lg">
-                        <Text className="text-white font-primary-bold text-sm tracking-wider">ECONOMY</Text>
+                        <Text className="text-white font-primary-bold text-sm tracking-wider">
+                          ECONOMY
+                        </Text>
                       </View>
                     )}
                   </View>
                 </View>
 
                 {/* Main Info Section */}
-                <View className="p-6 bg-[#141514]">
-                  {/* Route */}
-                  <View className="flex-row items-center justify-between mb-6">
-                    <View className="flex-1">
-                      <Text className="text-white/70 font-primary-medium text-xs tracking-wider mb-1.5">FROM</Text>
-                      <Text className="text-white font-primary-bold text-3xl tracking-tight">{trip.from}</Text>
-                    </View>
-
-
-
-                    <View className="flex-1 items-end">
-                      <Text className="text-white/70 font-primary-medium text-xs tracking-wider mb-1.5">TO</Text>
-                      <Text className="text-white font-primary-bold text-3xl tracking-tight">{trip.to}</Text>
-                    </View>
-                  </View>
-
-                  {/* Flight Details Grid */}
-                  <View className="flex-row justify-between mb-5">
-                    <View className='flex flex-col'>
-                      <Text className='text-white font-primary-semibold'>
-                        {/* current time */}
-                        {now.toLocaleString('en-US', {
-                          hour: '2-digit',
-                          minute: 'numeric',
-                          hour12: true
-                        })}
-                      </Text>
-                      <Text className='text-white text-lg font-primary-regular'>
-                        {/* current date */}
-                        {now.toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: '2-digit'
-                        })}
+                <View className="px-6 pt-4 bg-white">
+                  <View className="flex-row items-center justify-between mb-5">
+                    <View>
+                      <Text className="text-xs text-gray-500 mb-1">FROM</Text>
+                      <Text className="text-3xl font-primary-bold text-black">{trip.from}</Text>
+                      <Text className="text-xs text-gray-500">  
+                        Departing at {now.getHours().toString().padStart(2, '0')}:{now.getMinutes().toString().padStart(2, '0')}
                       </Text>
                     </View>
-                    <View className='flex flex-col'>
-                      <Text className='text-white font-primary-semibold'>
-                        {/* calculate end time based on trip.duration (minutes) */}
-                        {arrival.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                        })}
-                      </Text>
-                      <Text className='text-white text-lg font-primary-regular'>
-                        {/* calculate end date based on trip.duration (minutes) */}
-                        {arrival.toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: '2-digit'
-                        })}
+                    <View className="items-center">
+                      <View className="flex-row items-center mb-1">
+                        <View className="w-2 h-2 rounded-full bg-black mr-1.5" />
+                        <View className="w-14 h-[1px] bg-gray-400" />
+                        <View className="w-2 h-2 rounded-full bg-black ml-1.5" />
+                      </View>
+                      <Text className="text-xs text-gray-500">{formatDuration(trip.duration)} of deep focus</Text>
+                    </View>
+                    <View className="items-end">
+                      <Text className="text-xs text-gray-500 mb-1">TO</Text>
+                      <Text className="text-3xl font-primary-bold text-black">{trip.to}</Text>
+                      <Text className="text-xs text-gray-500">
+                        Landing at {arrival.getHours().toString().padStart(2, '0')}:{arrival.getMinutes().toString().padStart(2, '0')}
                       </Text>
                     </View>
                   </View>
@@ -315,7 +287,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
               </Animated.View>
 
               {/* Perforated Cut Line */}
-              <View className="relative" style={{ height: 1 }}>
+              <View className="relative" style={{ height: 0.5 }}>
                 <Animated.View
                   style={[{
                     flexDirection: 'row',
@@ -325,7 +297,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                   }, perforationStyle]}
                 >
                   {[...Array(25)].map((_, i) => (
-                    <View key={i} style={{ width: 8, height: 1, backgroundColor: '#141514' }} />
+                    <View key={i} style={{ width: 8, height: 1, backgroundColor: '#e5e7eb' }} />
                   ))}
                 </Animated.View>
 
@@ -333,7 +305,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
 
               {/* Bottom Part - Stub */}
               <Animated.View style={rightPartStyle}>
-                <View className="p-6 bg-[#141514]" style={{ borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }}>
+                <View className="p-6 bg-white" style={{ borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }}>
                   {/* <View className="flex-row items-center justify-between mb-4">
                   <View>
                     <Text className="text-gray-400 font-primary-medium text-xs tracking-wider mb-1">PASSENGER</Text>
@@ -345,37 +317,33 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                 </View> */}
 
                   <View className="">
-                    <Text className="text-white font-primary-medium text-xs tracking-wider mb-3">MISSION OBJECTIVES ({tasks.length})</Text>
+                    <Text className="text-gray-700 font-primary-medium text-xs tracking-wider mb-3">
+                      MISSION OBJECTIVES ({tasks.length})
+                    </Text>
                     {tasks.slice(0, 3).map((task, index) => (
                       <View key={task.id} className="flex-row items-start mb-2">
-                        <View className='w-1.5 h-1.5 rounded-full bg-secondary mr-2 mt-2'/>
-                        <Text className="text-white/90 font-primary-medium text-sm flex-1" numberOfLines={1}>
+                        <View className='w-1.5 h-1.5 rounded-full bg-secondary mr-2 mt-2' />
+                        <Text className="text-gray-900 font-primary-medium text-sm flex-1" numberOfLines={1}>
                           {task.title}
                         </Text>
                       </View>
                     ))}
                     {tasks.length > 3 && (
-                      <Text className="text-gray-400 font-primary-medium text-xs mt-1">
+                      <Text className="text-gray-500 font-primary-medium text-xs mt-1">
                         +{tasks.length - 3} more objectives
                       </Text>
                     )}
                   </View>
 
                   {/* Barcode */}
-                  <View className="mt-4 pt-4">
-                    <View className="flex-row" style={{ height: 50 }}>
-                      {[...Array(30)].map((_, i) => (
-                        <View
-                          key={i}
-                          style={{
-                            flex: 1,
-                            backgroundColor: '#ffffff',
-                            marginHorizontal: i % 2 === 0 ? 5 : 1,
-                          }}
-                        />
-                      ))}
+                  <View className="">
+                    <View className="flex-row bg-white">
+                      <Image
+                        source={require('../../assets/images/barcode.png')}
+                        style={{ width: '100%', height: 60, resizeMode: 'contain' }}
+                      />
                     </View>
-                    <Text className="text-white font-primary-medium text-xs text-center mt-3 tracking-widest">
+                    <Text className="text-gray-800 font-primary-medium text-xs text-center mt-3 tracking-widest">
                       TKT-{trip.from.slice(0, 2)}{trip.to.slice(0, 2)}-{Date.now().toString().slice(-6)}
                     </Text>
                   </View>

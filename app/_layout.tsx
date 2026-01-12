@@ -27,6 +27,7 @@ import {
   unblockSelection,
   ShieldConfiguration,
 } from 'react-native-device-activity';
+import { KochavaTracker, KochavaTrackerLogLevel } from 'react-native-kochava-tracker';
 
 
 Notifications.setNotificationHandler({
@@ -83,8 +84,11 @@ export default function RootLayout() {
   const [isOffline, setIsOffline] = useState(false);
 
   const REVENUECAT_APPLE_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
+  const KOCHAVA_APP_GUID = process.env.EXPO_PUBLIC_KOCHAVA_APP_GUID as string;
+
   const [isRevenueCatReady, setIsRevenueCatReady] = useState(false);
   const [hasCheckedPaywall, setHasCheckedPaywall] = useState(false);
+  const [hasCheckedKochavaAttribution, setHasCheckedKochavaAttribution] = useState(false);
 
   // Configure RevenueCat once on mount
   useEffect(() => {
@@ -95,14 +99,29 @@ export default function RootLayout() {
     }
   }, []);
 
+  // Configure Kochava once on mount (iOS only)
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    try {
+      // Register iOS App GUID and start the tracker
+      KochavaTracker.instance.setLogLevel(KochavaTrackerLogLevel.Info);
+      KochavaTracker.instance.registerIosAppGuid(KOCHAVA_APP_GUID);
+      KochavaTracker.instance.start();
+      console.log('✅ Kochava tracker started');
+    } catch (err) {
+      console.warn('Failed to start Kochava tracker', err);
+    }
+  }, []);
+
   // Configure Screen Time shield UI once (iOS only)
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
 
     try {
       const shieldConfig = {
-        title: 'Get back on track!',
-        subtitle: "Don't let {applicationOrDomainDisplayName} break your focus.",
+        title: '🔒 {applicationOrDomainDisplayName} \n is blocked',
+        subtitle: "You're focusing! Stay on track.",
         iconSystemName: 'moon.stars.fill',
         iconAppGroupRelativePath: 'shield/logo.png',
       };
@@ -157,6 +176,19 @@ export default function RootLayout() {
     logInToRevenueCat();
   }, [isRevenueCatReady, user?.id]);
 
+  // Link Kochava identity to Supabase user.id so installs/events can be tied to the user.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!user?.id) return;
+
+    try {
+      KochavaTracker.instance.registerIdentityLink('user_id', user.id);
+      KochavaTracker.instance.registerDefaultEventUserId(user.id);
+    } catch (err) {
+      console.warn('Failed to register Kochava identity link', err);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       const offline = !state.isConnected || state.isInternetReachable === false;
@@ -197,6 +229,14 @@ export default function RootLayout() {
       if (user.is_premium) return;
 
       try {
+        // Do not show the soft paywall until the user has completed
+        // the post-login onboarding flow once.
+        const hasSeenPostLogin = await AsyncStorage.getItem('hasSeenPostLoginOnboarding');
+        if (!hasSeenPostLogin) {
+          setHasCheckedPaywall(true);
+          return;
+        }
+
         const lastShownRaw = await AsyncStorage.getItem('paywall_last_shown_root_layout');
         const now = Date.now();
         const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
@@ -235,6 +275,34 @@ export default function RootLayout() {
 
     let mounted = true;
 
+    async function applyPendingReferralIfNeeded(userId: string, currentUserRow: any | null) {
+      try {
+        const pendingCode = await AsyncStorage.getItem('pending_referral_code');
+        if (!pendingCode) return;
+
+        // If user already has referral_code set in profile, don't overwrite
+        if (currentUserRow?.referral_code) {
+          await AsyncStorage.removeItem('pending_referral_code');
+          return;
+        }
+
+        const { error } = await supabase
+          .from('users')
+          .update({ referral_code: pendingCode })
+          .eq('id', userId);
+
+        if (!error) {
+          const existing = useUserStore.getState().user;
+          if (existing) {
+            useUserStore.getState().setUser({ ...existing, referral_code: pendingCode });
+          }
+          await AsyncStorage.removeItem('pending_referral_code');
+        }
+      } catch (err) {
+        console.warn('Failed to apply pending referral code', err);
+      }
+    }
+
     async function check() {
       try {
         // check Supabase session
@@ -250,22 +318,21 @@ export default function RootLayout() {
               .eq('id', session.user.id)
               .single();
 
-            if (!error && userProfile) {
-              useUserStore.getState().setUser(userProfile);
-            } else {
-              // Fallback to auth user
-              useUserStore.getState().setUser(session.user);
-            }
+            const profileToUse = !error && userProfile ? userProfile : session.user;
+            useUserStore.getState().setUser(profileToUse);
 
+            await applyPendingReferralIfNeeded(session.user.id, userProfile);
           } catch (err) {
             console.error('Error fetching user profile on startup:', err);
             useUserStore.getState().setUser(session.user);
           }
 
+
           if (mounted) {
             setChecking(false);
             setInitialCheckDone(true);
           }
+
           router.replace('/(tabs)' as any);
           return;
         }
@@ -300,6 +367,71 @@ export default function RootLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCheckDone]); // Run only once on mount
 
+  // After initial auth/profile check, ask Kochava for install attribution once
+  // and, if a referral_code is present, store it like our own referral deep link.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!initialCheckDone) return;
+    if (hasCheckedKochavaAttribution) return;
+
+    let cancelled = false;
+
+    const applyReferralCodeFromKochava = async (code: string) => {
+      if (!code) return;
+      console.log('✅ Kochava install attribution contains referral code:', code);
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const { error } = await supabase
+            .from('users')
+            .update({ referral_code: code })
+            .eq('id', authUser.id);
+
+          if (!error) {
+            const existing = useUserStore.getState().user;
+            if (existing) {
+              useUserStore.getState().setUser({ ...existing, referral_code: code });
+            }
+          }
+        } else {
+          await AsyncStorage.setItem('pending_referral_code', code);
+        }
+      } catch (err) {
+        console.warn('Failed to apply referral code from Kochava attribution', err);
+      }
+    };
+
+    const fetchAttribution = async () => {
+      try {
+        const attribution = await KochavaTracker.instance.retrieveInstallAttribution();
+        if (cancelled) return;
+
+        // attribution.raw is an object that should contain any custom values
+        const raw: any = attribution.raw ?? {};
+        const code: string | undefined =
+          raw.referral_code ??
+          raw.referralCode ??
+          raw.ref_code;
+
+        if (code && attribution.attributed) {
+          await applyReferralCodeFromKochava(code);
+        }
+      } catch (err) {
+        console.warn('Failed to retrieve Kochava install attribution', err);
+      } finally {
+        if (!cancelled) {
+          setHasCheckedKochavaAttribution(true);
+        }
+      }
+    };
+
+    fetchAttribution();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCheckDone, hasCheckedKochavaAttribution]);
+
   // Handle deep link OAuth callback (for native builds)
   useEffect(() => {
     let lastProcessedUrl = '';
@@ -317,13 +449,12 @@ export default function RootLayout() {
         return;
       }
 
-
       // Check if it's an OAuth callback (focusroom://auth/callback or contains tokens)
-      if (url.startsWith('focusroom://')) {
+      if (url.startsWith('focusroom://auth')) {
         lastProcessedUrl = url;
 
-        let accessToken = null;
-        let refreshToken = null;
+        let accessToken: string | null = null;
+        let refreshToken: string | null = null;
 
         // Try to extract tokens from URL hash (after #)
         const hashPart = url.split('#')[1];

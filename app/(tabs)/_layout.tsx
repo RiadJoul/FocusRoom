@@ -1,4 +1,4 @@
-import { FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
@@ -12,7 +12,7 @@ export default function TabLayout() {
       detachInactiveScreens={false}
       screenListeners={() => ({
         tabPress: () => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         },
       })}
       screenOptions={{
@@ -55,7 +55,7 @@ export default function TabLayout() {
         name="cockpit"
         options={{
           title: 'Cockpit',
-          tabBarIcon: ({ color }) => <FontAwesome5 name="user-astronaut" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <FontAwesome name="space-shuttle" size={24} color={color}/>,
         }}
       />
     </Tabs>
