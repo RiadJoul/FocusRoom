@@ -406,6 +406,17 @@ export default function RootLayout() {
         const attribution = await KochavaTracker.instance.retrieveInstallAttribution();
         if (cancelled) return;
 
+        // Log the full object once so we can see which field the referral
+        // code actually arrives in from Kochava / SmartLinks.
+        try {
+          console.log(
+            '📡 Kochava install attribution:',
+            JSON.stringify(attribution, null, 2),
+          );
+        } catch {
+          console.log('📡 Kochava install attribution (non-serializable):', attribution);
+        }
+
         // attribution.raw is an object that should contain any custom values
         const raw: any = attribution.raw ?? {};
         const code: string | undefined =
