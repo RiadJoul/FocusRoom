@@ -1,35 +1,38 @@
 import { Task } from '@/lib/stores/taskStore';
 import { useListStore } from '@/lib/stores/listStore';
-import { useUserStore } from '@/lib/stores/userStore';
 import { formatDueDate, parseLocalDateKey } from '@/lib/utils/dateUtils';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, ScrollView, Text, TouchableOpacity, View, TouchableWithoutFeedback, Animated } from 'react-native';
-import { Image } from 'expo-image';
-import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
+import {
+  Modal,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+  TouchableWithoutFeedback,
+  Animated,
+} from 'react-native';
 import { PLANET_TRIPS, PlanetTrip, formatDuration } from './PlanetTrips';
-import { Ionicons } from '@expo/vector-icons';
-import { Video, ResizeMode } from 'expo-av';
-import { formatDistanceWithUnit } from '@/lib/utils/distance';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { getPriorityColor } from '@/lib/utils/taskUtils';
+
+const SLIDER_ITEM_WIDTH = 56;
 
 interface TaskSelectionModalProps {
   bottomSheetRef: React.RefObject<BottomSheet | null>;
   tasks: Task[];
-  onStartSession: (selectedTasks: Task[], trip: PlanetTrip, mode: 'map' | '3d') => void;
+  onStartSession: (selectedTasks: Task[], trip: PlanetTrip) => void;
 }
 
 export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: TaskSelectionModalProps) {
-  const user = useUserStore((state) => state.user);
   const lists = useListStore((state) => state.lists);
-  const distanceUnit = useUserStore((state) => state.distanceUnit);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-  const [step, setStep] = useState<'tasks' | 'planet' | 'mode'>('tasks');
-  const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(null);
-  const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
+  const [step, setStep] = useState<'tasks' | 'planet'>('tasks');
+  const [selectedTrip, setSelectedTrip] = useState<PlanetTrip | null>(PLANET_TRIPS[0] ?? null);
   const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
-  const cinematicVideoRef = useRef<Video | null>(null);
   const shipProgress = useRef(new Animated.Value(0)).current;
+  const [orbitLayout, setOrbitLayout] = useState<{ width: number; height: number } | null>(null);
+  const [sliderWidth, setSliderWidth] = useState(0);
 
   // Precompute min/max duration so orbits feel physically “near” vs “far”
   const durations = PLANET_TRIPS.map((t) => t.duration);
@@ -57,9 +60,27 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     }
   };
 
-  const handleSelectTrip = (trip: PlanetTrip) => {
+  const handleSelectTrip = () => {
+    if (!selectedTrip || selectedTaskIds.size === 0) return;
+
+    const selectedTasks = tasks.filter((task) =>
+      selectedTaskIds.has(task.id),
+    );
+
+    onStartSession(selectedTasks, selectedTrip);
+    setSelectedTaskIds(new Set());
+    setStep('tasks');
+    setSelectedTrip(null);
+    setIsTaskModalVisible(false);
+  };
+
+  const handleSliderMomentumEnd = (e: any) => {
+    const x = e.nativeEvent.contentOffset.x ?? 0;
+    const interval = SLIDER_ITEM_WIDTH;
+    const rawIndex = Math.round(x / interval);
+    const clampedIndex = Math.max(0, Math.min(PLANET_TRIPS.length - 1, rawIndex));
+    const trip = PLANET_TRIPS[clampedIndex];
     setSelectedTrip(trip);
-    setStep('mode');
   };
 
   const handleClose = () => {
@@ -69,39 +90,6 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
     setIsTaskModalVisible(false);
   };
 
-  async function presentPaywall(): Promise<boolean> {
-    if (isPresentingPaywall) return false;
-    setIsPresentingPaywall(true);
-
-    try {
-      return await presentPaywallOnce({
-        userId: user?.id,
-        source: 'Trip Type Selection Modal',
-      });
-    } finally {
-      setIsPresentingPaywall(false);
-    }
-  }
-
-  const handleStartWithMode = async (mode: 'map' | '3d') => {
-    if (!selectedTrip) return;
-    const selectedTasks = tasks.filter(task => selectedTaskIds.has(task.id));
-    if (selectedTasks.length === 0) return;
-
-    if (mode === '3d' && !user?.is_premium) {
-      const unlocked = await presentPaywall();
-      // If purchase not completed/restored, do not start 3D session
-      if (!unlocked && !useUserStore.getState().user?.is_premium) {
-        return;
-      }
-    }
-
-    onStartSession(selectedTasks, selectedTrip, mode);
-    setSelectedTaskIds(new Set());
-    setStep('tasks');
-    setSelectedTrip(null);
-    setIsTaskModalVisible(false);
-  };
 
   //today
   const today = new Date();
@@ -139,13 +127,6 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
       (bottomSheetRef as any).current = null;
     };
   }, [bottomSheetRef]);
-
-  // Ensure the 3D preview video auto-plays and loops while on the mode step
-  useEffect(() => {
-    if (step === 'mode' && isTaskModalVisible && cinematicVideoRef.current) {
-      cinematicVideoRef.current.playAsync().catch(() => { });
-    }
-  }, [step, isTaskModalVisible]);
 
   // Simple looping ship animation for the orbit view
   useEffect(() => {
@@ -198,7 +179,13 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
 
           {/* Orbit style selector */}
           <View className="items-center mt-2 mb-6">
-            <View className="w-[400px] h-[355px] rounded-[16px] bg-black overflow-hidden border border-white/10">
+            <View
+              className="w-[400px] h-[355px] rounded-[16px] bg-black overflow-hidden border border-white/10"
+              onLayout={(e) => {
+                const { width, height } = e.nativeEvent.layout;
+                setOrbitLayout({ width, height });
+              }}
+            >
               {/* Starfield */}
               <View className="absolute inset-0">
                 {Array.from({ length: 32 }).map((_, idx) => (
@@ -232,87 +219,158 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
               </View>
 
               {/* Destination planets on orbit – distance based on duration */}
-              {PLANET_TRIPS.map((trip, index) => {
-                const total = PLANET_TRIPS.length;
-                const angle = (2 * Math.PI * index) / total - Math.PI / 2;
-                const innerRadius = 100;
-                const outerRadius = 128;
+              {orbitLayout &&
+                PLANET_TRIPS.map((trip, index) => {
+                  const isSelected = selectedTrip?.id === trip.id;
+                  const total = PLANET_TRIPS.length;
+                  const angle = (2 * Math.PI * index) / total - Math.PI / 2;
 
-                // Normalised 0–1 based on duration (shorter = closer, longer = farther)
-                const norm =
-                  maxDuration === minDuration
-                    ? 0
-                    : (trip.duration - minDuration) / (maxDuration - minDuration);
-                const radius = innerRadius + norm * (outerRadius - innerRadius);
+                  const maxOrbitRadius = Math.min(orbitLayout.width, orbitLayout.height) * 0.38;
+                  const minOrbitRadius = maxOrbitRadius * 0.7;
 
-                const center = 144; // half of 72 * 4 (device-independent-ish)
-                const x = center + radius * Math.cos(angle);
-                const y = center + radius * Math.sin(angle);
+                  // Normalised 0–1 based on duration (shorter = closer, longer = farther)
+                  const norm =
+                    maxDuration === minDuration
+                      ? 0
+                      : (trip.duration - minDuration) / (maxDuration - minDuration);
 
-                
+                  const radius =
+                    minOrbitRadius + norm * (maxOrbitRadius - minOrbitRadius);
 
-                return (
-                  <TouchableOpacity
-                    key={trip.id}
-                    onPress={() => handleSelectTrip(trip)}
-                    activeOpacity={0.9}
-                    style={{
-                      position: 'absolute',
-                      left: x + 28,
-                      top: y - 18,
-                    }}
-                  >
+                  const centerX = orbitLayout.width / 2;
+                  const centerY = orbitLayout.height / 2;
+
+                  const planetCenterX = centerX + radius * Math.cos(angle);
+                  const planetCenterY = centerY + radius * Math.sin(angle);
+
+                  
+
+                  const planetRadiusOuter = 24; // half of 48
+
+                  const planetNode = (
                     <View
-                      className="w-12 h-12 rounded-full items-center justify-center"
-                      style={{ backgroundColor: `${trip.color}33`, borderWidth: 1, borderColor: `${trip.color}80` }}
+                      key={trip.id}
+                      style={{
+                        position: 'absolute',
+                        left: planetCenterX - planetRadiusOuter,
+                        top: planetCenterY - planetRadiusOuter,
+                      }}
                     >
                       <View
-                        className="w-10 h-10 rounded-full items-center justify-center"
-                        style={{ backgroundColor: trip.color }}
+                        className="w-12 h-12 rounded-full items-center justify-center"
+                        style={{
+                          backgroundColor: `${trip.color}33`,
+                          borderWidth: isSelected ? 3 : 1,
+                          borderColor: isSelected ? '#ffffff' : `${trip.color}80`,
+                          shadowColor: isSelected ? trip.color : 'transparent',
+                          shadowOpacity: isSelected ? 0.7 : 0,
+                          shadowRadius: isSelected ? 10 : 0,
+                        }}
                       >
-                       <Ionicons name="planet-outline" size={28} color="#000000" />
-
+                        <View
+                          className="w-10 h-10 rounded-full items-center justify-center"
+                          style={{ backgroundColor: trip.color }}
+                        >
+                          <Ionicons name="planet-outline" size={28} color="#000000" />
+                        </View>
+                      </View>
+                      <View className="items-center mt-1">
+                        <Text className="text-[12px] text-center font-primary-semibold text-gray-100">
+                          {formatDuration(trip.duration)}
+                        </Text>
+                        <Text className="text-[8px] text-center pt-1 font-primary-semibold text-gray-100">
+                          {trip.to}
+                        </Text>
                       </View>
                     </View>
-                    <View
-              
-                      className="items-center"
-                    >
-                      <Text className="text-[12px] text-center font-primary-semibold text-gray-100">
-                         {formatDuration(trip.duration)}
-                      </Text>
-                      <Text className="text-[8px] text-center pt-1 font-primary-semibold text-gray-100">
-                         {trip.to}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+                  );
+
+                  return planetNode;
+                })}
 
             </View>
           </View>
 
-          {/* Legend */}
-          <View className="mt-1">
-            <Text className="text-gray-400 font-primary-medium text-xs mb-1">
-              Tap any planet to board that mission:
-            </Text>
-            <ScrollView showsHorizontalScrollIndicator={false}>
-              {PLANET_TRIPS.map((trip) => (
+          {/* Duration slider + Check-in */}
+          <View className="mt-4">
+            
+            <View
+              className="relative py-3"
+              onLayout={(e) => {
+                setSliderWidth(e.nativeEvent.layout.width);
+              }}
+            >
+              {/* Center pointer */}
+              <View className={`flex justify-center items-center absolute -top-1 left-1/2 transform -translate-x-5 -translate-y-1`}>
                 <View
-                  key={`${trip.id}-legend`}
-                  className="flex-row items-center mr-4 mt-2 px-3 py-1 "
+                  style={{ width: 0, height: 0 }}
+                  className="border-l-[6px] border-r-[6px] border-t-[10px] border-l-transparent border-r-transparent border-t-white"
+                />
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={SLIDER_ITEM_WIDTH}
+                snapToAlignment="center"
+                decelerationRate="fast"
+                onMomentumScrollEnd={handleSliderMomentumEnd}
+                contentContainerStyle={{
+                  paddingHorizontal:
+                    sliderWidth > 0
+                      ? Math.max(0, (sliderWidth - SLIDER_ITEM_WIDTH) / 2)
+                      : 0,
+                  alignItems: 'flex-end',
+                }}
+              >
+                {PLANET_TRIPS.map((trip, index) => {
+                  const isActive = selectedTrip?.id === trip.id;
+                  return (
+                    <View
+                      key={`${trip.id}-slider`}
+                      style={{ width: SLIDER_ITEM_WIDTH , alignItems: 'center' }}
+                      className="items-center"
+                    >
+                      <View
+                        className={`w-[4px] rounded-full ${
+                          isActive ? 'bg-white' : 'bg-gray-600'
+                        }`}
+                        style={{ height: 22 + index * 3 }}
+                      />
+                      <Text
+                        className={`mt-1 text-[10px] font-primary-medium ${
+                          isActive ? 'text-white' : 'text-gray-500'
+                        }`}
+                      >
+                        {Math.round(trip.duration / 60)}m
+                      </Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <View className="mt-4 items-center">
+              <TouchableOpacity
+                disabled={!selectedTrip || selectedTaskIds.size === 0}
+                onPress={handleSelectTrip}
+                activeOpacity={0.9}
+                className={`flex-row justify-center w-full py-3.5 rounded-2xl items-center ${
+                  selectedTrip && selectedTaskIds.size > 0
+                    ? 'bg-white'
+                    : 'bg-gray-700'
+                }`}
+              >
+              <MaterialIcons name="airplane-ticket" size={24} color="black" />
+                <Text
+                  className={`font-primary-bold text-base pl-1 ${
+                    selectedTrip && selectedTaskIds.size > 0 ? 'text-black' : 'text-gray-300'
+                  }`}
                 >
-                  <View
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{ backgroundColor: trip.color }}
-                  />
-                  <Text className="text-xs text-gray-100 font-primary-medium">
-                    {trip.to} · {formatDuration(trip.duration)}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
+                  Check in
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -328,7 +386,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
           <View className="flex-1 justify-end bg-black/50">
             <TouchableWithoutFeedback>
               <View className="bg-background rounded-t-3xl px-5 pt-4 pb-2 max-h-[85%]">
-                {step === 'tasks' ? (
+                {step === 'tasks' && (
                   <View style={{ flexShrink: 1, maxHeight: '100%' }}>
                     <Text className="text-white font-primary-bold text-2xl mb-2">Select Tasks</Text>
                     <Text className="text-gray-400 font-primary-medium text-sm mb-4">
@@ -482,138 +540,14 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                               className={`font-primary-bold text-base ${selectedTaskIds.size > 0 ? 'text-black' : 'text-black'
                                 }`}
                             >
-                              Next: Choose Trip
+                              Next
                             </Text>
                           </TouchableOpacity>
                         </View>
                       </>
                     )}
                   </View>
-                ) : (
-                  <>
-                    <TouchableOpacity
-                      onPress={() => setStep('planet')}
-                      className="mb-4"
-                    >
-                      <Text className="text-primary font-primary-semibold text-sm">
-                        ← Back to Trips
-                      </Text>
-                    </TouchableOpacity>
-
-                    {selectedTrip && (
-                      <>
-                        <Text className="text-xs tracking-[2px] text-primary font-primary-semibold uppercase mb-1">
-                          Flight Mode
-                        </Text>
-                        <Text className="text-white font-primary-bold text-2xl mb-1">
-                          Choose your cockpit view
-                        </Text>
-                        
-
-                        <View className="mb-6 p-4 rounded-2xl bg-card border border-gray-800/60">
-                          <View className="flex-row items-center justify-between mb-3">
-                            <View>
-                              <Text className="text-white font-primary-semibold text-base mb-1">
-                                {selectedTrip.from} → {selectedTrip.to}
-                              </Text>
-                              <Text className="text-gray-400 font-primary-medium text-xs">
-                                {selectedTrip.description}
-                              </Text>
-                            </View>
-                            <View className="ml-3 rounded-full bg-primary/15 px-3 py-1">
-                              <Text className="text-primary font-primary-semibold text-xs">
-                                {formatDistanceWithUnit(selectedTrip.distance_km, distanceUnit)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View className="flex-row gap-2">
-                            <View className="flex-row items-center rounded-full bg-gray-900/80 px-2.5 py-1">
-                              <Ionicons name="time-outline" size={14} color="#9ca3af" />
-                              <Text className="text-gray-300 font-primary-medium text-xs ml-1.5">
-                                {formatDuration(selectedTrip.duration)}
-                              </Text>
-                            </View>
-                            <View className="flex-row items-center rounded-full bg-gray-900/80 px-2.5 py-1">
-                              <Ionicons name="sparkles-outline" size={14} color="#a855f7" />
-                            </View>
-                          </View>
-                        </View>
-
-                        <View className="flex-row w-full px-1 gap-x-5">
-                          <TouchableOpacity
-                            onPress={() => handleStartWithMode('map')}
-                            className="flex-1 rounded-2xl bg-black/80 border border-gray-900 overflow-hidden"
-                            activeOpacity={0.9}
-                          >
-                            <View className="relative">
-                              <Image
-                                source={require('../../assets/images/session-map.jpeg')}
-                                style={{ width: '100%', height: 220 }}
-                                contentFit="cover"
-                              />
-                              <View className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-1">
-                                <Text className="text-xs font-primary-semibold text-gray-200">
-                                  Smooth 2D Map
-                                </Text>
-                              </View>
-                            </View>
-                            <View className="px-3 pt-3 pb-3">
-                              <Text className="text-white text-center font-primary-bold text-lg">
-                                Economy
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            onPress={() => handleStartWithMode('3d')}
-                            className={`flex-1 rounded-3xl overflow-hidden border-2 border-secondary bg-secondary/10`}
-                            activeOpacity={0.9}
-                          >
-                            <View className="relative">
-                              <Video
-                                ref={cinematicVideoRef}
-                                source={require('../../assets/videos/session-3d.mp4')}
-                                resizeMode={ResizeMode.COVER}
-                                shouldPlay
-                                isLooping
-                                isMuted
-
-                                style={{ width: '100%', height: 220 }}
-                              />
-
-
-
-
-
-                              <View className="absolute top-3 left-3 rounded-full bg-black/70 px-2.5 py-1">
-                                <Text className="text-xs font-primary-semibold text-gray-200">
-                                  Cinematic 3D
-                                </Text>
-                              </View>
-                            </View>
-                            <View className="px-3 pt-3 pb-3 border-t border-secondary/40 bg-black/70">
-                              <View style={{
-                                backgroundColor: '#A78BFA',
-                                paddingHorizontal: 12,
-                                paddingVertical: 3,
-                                borderRadius: 6,
-                                shadowColor: '#A78BFA',
-                                shadowOffset: { width: 0, height: 0 },
-                                shadowOpacity: 0.7,
-                                shadowRadius: 10,
-                                elevation: 10,
-                              }}>
-                                <Text className="text-white font-primary-bold text-base text-center tracking-wider">FIRST CLASS</Text>
-                              </View>
-
-                            </View>
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
-                  </>
-                )}
+                ) }
               </View>
             </TouchableWithoutFeedback>
           </View>

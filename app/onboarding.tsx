@@ -5,27 +5,31 @@ import { Animated, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const slides = [
-    {
-        question: 'Welcome aboard! 👋',
-        description: 'Let’s take back control of your focus.',
-        buttonText: 'Start',
-    },
-    {
-        question: 'Too many unfinished tasks?',
-        highlightWord: 'unfinished',
-        buttonText: 'Yes',
-    },
-    {
-        question: 'Losing focus too easily?',
-        highlightWord: 'Losing focus',
-        buttonText: 'All the time',
-    },
-    {
-        question: "That's why we created FocusRoom",
-        highlightWord: 'FocusRoom',
-        buttonText: 'Get Started',
-    },
+  {
+    question: 'Welcome aboard! 👋',
+    description: 'Let’s stop letting your focus slip away.',
+    buttonText: 'Start',
+  },
+  {
+    question: 'Too many unfinished tasks?',
+    highlightWord: 'unfinished',
+    description: '🤷 You sit down to work and somehow nothing actually gets finished.',
+    buttonText: 'That’s me',
+  },
+  {
+    question: '📱 Open your phone, start scrolling?',
+    highlightWord: 'scrolling',
+    description: 'A “quick check” turns into 20–30 minutes before you even notice.',
+    buttonText: 'I’m done with that',
+  },
+  {
+    question: "That's why we created FocusRoom",
+    highlightWord: 'FocusRoom',
+    description: 'So your time goes into what matters, not into endless distractions.',
+    buttonText: 'Get started',
+  },
 ];
+
 
 
 export default function Onboarding() {

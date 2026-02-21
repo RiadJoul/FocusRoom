@@ -8,6 +8,7 @@ import { Premium3DSlide } from '@/components/onboarding/Premium3DSlide';
 import { PremiumAnalyticsSlide } from '@/components/onboarding/PremiumAnalyticsSlide';
 import { analytics, Events } from '@/lib/analytics';
 import { PremiumTicketSlide } from '@/components/onboarding/PremiumTicketSlide';
+import { PremiumWidgetsSlide } from '@/components/onboarding/PremiumWidgetsSlide';
 
 const slides = [
   {
@@ -31,10 +32,15 @@ const slides = [
     subtitle: 'Fly your ship in cinematic 3D while the timer runs.',
   },
   {
+    key: 'widgets',
+    title: 'Widgets & StandBy',
+    subtitle: 'Home, Lock Screen and StandBy widgets keep your mission in view.',
+  },
+  {
     key: 'analytics',
     title: 'Advanced focus analytics',
     subtitle: 'See streaks, distance travelled and focus health over time.',
-  },
+  }
 ] as const;
 
 type SlideKey = (typeof slides)[number]['key'];
@@ -91,6 +97,9 @@ export default function PremiumIntro() {
     }
     if (key === 'analytics') {
       return <PremiumAnalyticsSlide />;
+    }
+    if (key === 'widgets') {
+      return <PremiumWidgetsSlide />;
     }
     // overview
     return <PremiumTicketSlide />;

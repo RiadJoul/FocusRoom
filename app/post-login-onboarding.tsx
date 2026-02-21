@@ -15,6 +15,8 @@ import {
   requestAuthorization as requestScreenTimeAuthorization,
 } from 'react-native-device-activity';
 import { analytics, Events } from '@/lib/analytics';
+import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const slides = [
   {
@@ -231,8 +233,27 @@ export default function PostLoginOnboarding() {
       return;
     }
 
-    // last slide: premium benefits slide
-    
+    // Last slide: mark onboarding as seen
+    await AsyncStorage.setItem('hasSeenPostLoginOnboarding', 'true');
+
+    // Immediately present the paywall for non‑premium users.
+    if (user?.id && !user.is_premium) {
+      const now = Date.now();
+      const didPurchase = await presentPaywallOnce({
+        userId: user.id,
+        source: 'post_login_onboarding',
+      });
+
+      if (!didPurchase) {
+        // Seed the 2‑hour soft paywall timer used in RootLayout so the
+        // user doesn't see another paywall immediately on app open.
+        await AsyncStorage.setItem(
+          'paywall_last_shown_root_layout',
+          String(now),
+        );
+      }
+    }
+
     router.replace('/(tabs)' as any);
   };
 
@@ -254,6 +275,25 @@ export default function PostLoginOnboarding() {
 
     // Last slide: finish onboarding
     analytics.track(Events.POST_LOGIN_ONBOARDING_COMPLETED).catch(() => {});
+    await AsyncStorage.setItem('hasSeenPostLoginOnboarding', 'true');
+
+    // Also surface the paywall when the user has seen all slides,
+    // even if they used "Skip" on the last one.
+    if (user?.id && !user.is_premium) {
+      const now = Date.now();
+      const didPurchase = await presentPaywallOnce({
+        userId: user.id,
+        source: 'post_login_onboarding_skip',
+      });
+
+      if (!didPurchase) {
+        await AsyncStorage.setItem(
+          'paywall_last_shown_root_layout',
+          String(now),
+        );
+      }
+    }
+
     router.replace('/(tabs)' as any);
   };
 

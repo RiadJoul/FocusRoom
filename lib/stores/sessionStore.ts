@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { FocusSession, FocusStats, SessionCreateInput } from '@/lib/types/session';
 import { create } from 'zustand';
+import { updateHabitSnapshot } from '@/lib/missionState';
+import { useUserStore } from './userStore';
 
 interface SessionState {
   sessions: FocusSession[];
@@ -63,6 +65,52 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         dayTotals.set(dayKey, prev + s.duration_seconds / 60);
       });
       const deepFocusDays = Array.from(dayTotals.values()).filter((m) => m >= 60).length;
+
+      // Habit heatmap for roughly the last 3 months.
+      // We model this as 12 weeks × 7 days = 84 days.
+      const HABIT_WEEKS = 12;
+      const HABIT_DAYS = HABIT_WEEKS * 7;
+
+      try {
+        const currentUser = useUserStore.getState().user;
+        const isPremium = !!currentUser?.is_premium;
+
+        if (!currentUser?.id) {
+          // Not signed in – habit widget should show dedicated sign-in UI.
+          // Sentinel -2 = no user.
+          updateHabitSnapshot([-2]).catch(() => {});
+        } else if (!isPremium) {
+          // Non‑premium user – habit widget should show upsell, not data.
+          // Sentinel -1 = non‑premium.
+          updateHabitSnapshot([-1]).catch(() => {});
+        } else {
+          // Premium user – compute levels from dayTotals for the last ~3 months.
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const levels: number[] = [];
+
+          for (let i = HABIT_DAYS - 1; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(today.getDate() - i);
+            const key = d.toDateString();
+            const minutes = dayTotals.get(key) ?? 0;
+
+            let level = 0;
+            if (minutes >= 60) level = 3;
+            else if (minutes >= 25) level = 2;
+            else if (minutes > 0) level = 1;
+
+            levels.push(level);
+          }
+
+          updateHabitSnapshot(levels).catch(() => {
+            // non-fatal; widget just won't update
+          });
+        }
+      } catch {
+        // ignore habit snapshot errors
+      }
 
       // Calculate focus health score
       const focusHealthScore = await get().calculateFocusHealthScore(userId);
