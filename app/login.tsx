@@ -11,7 +11,6 @@ import { Platform } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { privacyPolicyUrl, termsOfServiceUrl } from '@/lib/constants';
-import LottieView from 'lottie-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Login() {
@@ -230,15 +229,6 @@ export default function Login() {
     <SafeAreaView className="flex-1 bg-black">
       <View className="flex-1 items-center justify-center px-8">
         <View className="items-center w-full">
-          {/* Illustration */}
-          {/* <View className='w-48 h-48 mb-5'>
-            <LottieView
-              source={require("../assets/illustrations/solar.json")}
-              style={{ width: "100%", height: "100%" }}
-              autoPlay
-              loop
-            />
-          </View> */}
 
           {/* Title */}
           <Text className="text-4xl font-primary-semibold text-white text-center mb-3">
