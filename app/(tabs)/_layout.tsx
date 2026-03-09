@@ -1,4 +1,4 @@
-import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
@@ -55,7 +55,7 @@ export default function TabLayout() {
         name="cockpit"
         options={{
           title: 'Cockpit',
-          tabBarIcon: ({ color }) => <FontAwesome name="space-shuttle" size={24} color={color}/>,
+          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="tablet-dashboard" size={24} color={color} />,
         }}
       />
     </Tabs>

@@ -2,7 +2,7 @@
   "expo": {
     "name": "FocusRoom",
     "slug": "FocusRoom",
-    "version": "2.2",
+    "version": "3.1",
     "orientation": "portrait",
     "scheme": "focusroom",
     "userInterfaceStyle": "automatic",
@@ -26,7 +26,8 @@
           "audio",
           "remote-notification"
         ],
-        "NSUserNotificationsUsageDescription": "FocusRoom sends gentle reminders to start focusing so you stay on track with your missions."
+        "NSUserNotificationsUsageDescription": "FocusRoom sends gentle reminders to start focusing so you stay on track with your missions.",
+        "NSSupportsLiveActivities": true
       }
     },
     "android": {
@@ -84,7 +85,45 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "26e98368-af89-4b11-9acc-f9da6cd930d7"
+        "projectId": "26e98368-af89-4b11-9acc-f9da6cd930d7",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "bundleIdentifier": "com.anonymous.focusRoom.ShieldConfiguration",
+                  "targetName": "ShieldConfiguration",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anonymous.focusRoom"
+                    ]
+                  }
+                },
+                {
+                  "bundleIdentifier": "com.anonymous.focusRoom.ShieldAction",
+                  "targetName": "ShieldAction",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anonymous.focusRoom"
+                    ]
+                  }
+                },
+                {
+                  "bundleIdentifier": "com.anonymous.focusRoom.ActivityMonitorExtension",
+                  "targetName": "ActivityMonitorExtension",
+                  "entitlements": {
+                    "com.apple.developer.family-controls": true,
+                    "com.apple.security.application-groups": [
+                      "group.com.anonymous.focusRoom"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     }
   }

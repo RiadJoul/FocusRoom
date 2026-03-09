@@ -230,7 +230,7 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                       </View>
                     </View>
                     {/* make this view glowing */}
-                    {user?.is_premium && (
+                    {user?.is_premium ? (
                       <View style={{
                         backgroundColor: '#A78BFA',
                         paddingHorizontal: 12,
@@ -244,16 +244,16 @@ export function TicketAnimation({ visible, trip, tasks, onAnimationComplete }: T
                       }}>
                         <Text className="text-white font-primary-bold text-sm tracking-wider">
                           FIRST CLASS
-                        </Text>
-                      </View>
-                    )}
-                    {!user?.is_premium && (
-                      <View className="bg-white/20 px-3 py-1.5 rounded-lg">
+                        </Text> 
+                      </View> ) :(
+                        <View className="bg-white/20 px-3 py-1.5 rounded-lg">
                         <Text className="text-white font-primary-bold text-sm tracking-wider">
                           ECONOMY
                         </Text>
                       </View>
-                    )}
+                      )
+                    }
+                    
                   </View>
                 </View>
 

@@ -11,6 +11,8 @@ import { Platform } from 'react-native';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { privacyPolicyUrl, termsOfServiceUrl } from '@/lib/constants';
+import LottieView from 'lottie-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Login() {
   const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
@@ -57,7 +59,14 @@ export default function Login() {
           });
 
         // Navigate to post-login onboarding once, then tabs
-       router.replace('/post-login-onboarding' as any);
+        const hasSeenPostLoginOnboarding = await AsyncStorage.getItem('hasSeenPostLoginOnboarding');
+        if (!hasSeenPostLoginOnboarding) {
+          router.replace('/post-login-onboarding' as any);
+        } else {
+          router.replace('/(tabs)' as any);
+        }
+        
+       
       } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         useUserStore.getState().clearUser();
       }
@@ -222,12 +231,12 @@ export default function Login() {
       <View className="flex-1 items-center justify-center px-8">
         <View className="items-center w-full">
           {/* Illustration */}
-          {/* <View className="relative mb-12">
-            <Image
-              source={require('../assets/icons/ios-light.png')}
-              style={{ width: 180, height: 180 }}
-              contentFit="contain"
-              className='rounded-lg'
+          {/* <View className='w-48 h-48 mb-5'>
+            <LottieView
+              source={require("../assets/illustrations/solar.json")}
+              style={{ width: "100%", height: "100%" }}
+              autoPlay
+              loop
             />
           </View> */}
 

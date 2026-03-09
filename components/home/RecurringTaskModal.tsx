@@ -427,7 +427,7 @@ export function RecurringTaskModal({
                     <TouchableOpacity
                       onPress={() => {
                         if (!canCreateMoreLists) {
-                          presentPaywallOnce();
+                          presentPaywallOnce({source: 'unlimited_lists'});
                           return;
                         }
                         setShowListCreator(true);
@@ -501,7 +501,7 @@ export function RecurringTaskModal({
                               >
                                 {p}
                               </Text>
-                              <Text className="text-[11px] text-gray-500 font-primary-medium">
+                              <Text className="text-xs text-gray-500 font-primary-medium">
                                 {colors.label}
                               </Text>
                             </View>

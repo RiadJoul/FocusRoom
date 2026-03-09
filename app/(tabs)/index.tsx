@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications } from '@/lib/hooks/useRegisterForPushNotifications';
 import * as Notifications from 'expo-notifications';
 import { analytics, Events, Properties } from '@/lib/analytics';
+import { updateTodayTasksSnapshot, updateHabitSnapshot } from '@/lib/missionState';
 
 export default function HomeScreen() {
   const user = useUserStore((state) => state.user);
@@ -161,6 +162,33 @@ export default function HomeScreen() {
     return getTopPriorityTasks(incompleteTasks);
   }, [incompleteTasks]);
 
+  // Keep widget snapshot of today's tasks titles in sync.
+  useEffect(() => {
+    // Only sync when selected day is today to avoid weird snapshots.
+    const isToday = selectedDay.getTime() === today.getTime();
+    if (!isToday) return;
+
+    // Not authenticated: tell widget to show login/signup message
+    if (!user?.id) {
+      updateTodayTasksSnapshot({ titles: [], state: 'no_user' });
+      // Habit widget: explicit "no user" sentinel
+      updateHabitSnapshot([-2]);
+      return;
+    }
+
+    // Authenticated but not premium: show upgrade message
+    if (!user.is_premium) {
+      updateTodayTasksSnapshot({ titles: [], state: 'non_premium' });
+      // Habit widget: explicit "non‑premium" sentinel
+      updateHabitSnapshot([-1]);
+      return;
+    }
+
+    // Premium user: send top tasks
+    const titles = topTasks.map((t) => t.title);
+    updateTodayTasksSnapshot({ titles, state: 'tasks' });
+  }, [topTasks, selectedDay, today, user?.id, user?.is_premium]);
+
 
   // Handler for adding a task
   const handleAddTask = useCallback(async (
@@ -245,7 +273,9 @@ export default function HomeScreen() {
 
 
   return (
-    <SafeAreaView className="flex-1 bg-background pt-5">
+    <SafeAreaView
+    edges={['top', 'left', 'right']}
+    className="flex-1 bg-background pt-5">
       <ScrollView
         className="flex-1 px-4"
         showsVerticalScrollIndicator={false}
@@ -288,8 +318,7 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Bottom Padding */}
-        <View className="h-24" />
+       
       </ScrollView>
 
 

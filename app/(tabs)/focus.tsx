@@ -21,7 +21,9 @@ import {
   getFamilyActivitySelectionId,
 } from 'react-native-device-activity';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
-import { SimpleLineIcons, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { SimpleLineIcons, MaterialCommunityIcons, Ionicons, MaterialIcons } from '@expo/vector-icons';
+
+const PREFERRED_MODE_KEY = 'focus_preferred_mode';
 
 export default function FocusTab() {
   const navigation = useNavigation();
@@ -46,8 +48,9 @@ export default function FocusTab() {
   // Paywall presentation state
   const [isPresentingPaywall, setIsPresentingPaywall] = useState(false);
 
-  // session visual type
+  // session visual type (2D map or 3D cockpit)
   const [sessionType, setSessionType] = useState<'3d' | 'map'>('map');
+  const [preferredMode, setPreferredMode] = useState<'3d' | 'map'>('map');
 
   const bottomSheetRef = useRef<BottomSheet>(null);
 
@@ -58,6 +61,22 @@ export default function FocusTab() {
       fetchSessions(user.id);
     }
   }, [user?.id, fetchStats, fetchSessions]);
+
+  // Load preferred cockpit mode (2D vs 3D) from storage
+  useEffect(() => {
+    const loadPreferredMode = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(PREFERRED_MODE_KEY);
+        if (stored === 'map' || stored === '3d') {
+          setPreferredMode(stored);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    };
+
+    loadPreferredMode();
+  }, []);
 
 
   // Track screen view once on mount
@@ -110,22 +129,31 @@ export default function FocusTab() {
     });
   }, [incompleteTasks.length]);
 
-  const handleStartSession = useCallback((tasks: Task[], trip: PlanetTrip, mode: 'map' | '3d') => {
-    setSelectedTasks(tasks);
-    setSelectedTrip(trip);
-    setSessionType(mode);
-    setShowTicket(true);
+  const handleStartSession = useCallback(
+    (tasks: Task[], trip: PlanetTrip) => {
+      // Start using the user's preferred mode, but force 2D if not premium.
+      let mode: 'map' | '3d' = preferredMode;
+      if (!user?.is_premium && mode === '3d') {
+        mode = 'map';
+      }
 
-    analytics.track(Events.TRIP_SELECTED, {
-      [Properties.TRIP_ID]: trip.id,
-      [Properties.TRIP_NAME]: `${trip.from} → ${trip.to}`,
-      [Properties.TRIP_DESTINATION]: trip.to,
-      [Properties.DURATION_MINUTES]: Math.floor(trip.duration / 60),
-      [Properties.DISTANCE_KM]: trip.distance_km,
-      [Properties.TASKS_COUNT]: tasks.length,
-      session_type: mode,
-    });
-  }, []);
+      setSelectedTasks(tasks);
+      setSelectedTrip(trip);
+      setSessionType(mode);
+      setShowTicket(true);
+
+      analytics.track(Events.TRIP_SELECTED, {
+        [Properties.TRIP_ID]: trip.id,
+        [Properties.TRIP_NAME]: `${trip.from} → ${trip.to}`,
+        [Properties.TRIP_DESTINATION]: trip.to,
+        [Properties.DURATION_MINUTES]: Math.floor(trip.duration / 60),
+        [Properties.DISTANCE_KM]: trip.distance_km,
+        [Properties.TASKS_COUNT]: tasks.length,
+        session_type: mode,
+      });
+    },
+    [preferredMode, user?.is_premium],
+  );
 
   const handleTicketAnimationComplete = useCallback(() => {
     setShowTicket(false);
@@ -210,14 +238,10 @@ export default function FocusTab() {
         // If this was their very first session, softly ask for an App Store review on iOS.
         if (wasFirstSession && Platform.OS === 'ios') {
           try {
-            const alreadyPrompted = await AsyncStorage.getItem('has_app_review_prompted');
-            if (!alreadyPrompted) {
               const available = await StoreReview.isAvailableAsync();
               if (available) {
                 await StoreReview.requestReview();
-                await AsyncStorage.setItem('has_app_review_prompted', 'true');
               }
-            }
           } catch (err) {
             console.warn('App review prompt failed:', err);
           }
@@ -255,7 +279,7 @@ export default function FocusTab() {
     }
   }, [toggleComplete]);
 
-  async function presentPaywall(): Promise<boolean> {
+  async function presentPaywall(source: string = 'advanced_focus_stats'): Promise<boolean> {
     // Prevent re-entrancy
     if (isPresentingPaywall) return false;
     setIsPresentingPaywall(true);
@@ -263,12 +287,37 @@ export default function FocusTab() {
     try {
       return await presentPaywallOnce({
         userId: user?.id,
-        source: 'focus_screen',
+        source,
       });
     } finally {
       setIsPresentingPaywall(false);
     }
   }
+
+  const handleChangeMode = useCallback(
+    async (next: 'map' | '3d') => {
+      if (next === sessionType) return;
+
+      // Going to 3D: require premium
+      if (next === '3d') {
+        if (!user?.is_premium) {
+          const unlocked = await presentPaywall('focus_mode_3d_toggle');
+          if (!unlocked && !useUserStore.getState().user?.is_premium) {
+            return;
+          }
+        }
+      }
+
+      setSessionType(next);
+      setPreferredMode(next);
+      try {
+        await AsyncStorage.setItem(PREFERRED_MODE_KEY, next);
+      } catch {
+        // ignore storage errors
+      }
+    },
+    [sessionType, user?.is_premium],
+  );
 
 
   if (sessionActive && selectedTrip) {
@@ -279,12 +328,15 @@ export default function FocusTab() {
         onEndSession={handleEndSession}
         onMarkTasksComplete={handleMarkTasksComplete}
         mode={sessionType}
+        onChangeMode={handleChangeMode}
       />
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView
+    edges={['top', 'left', 'right']}
+    className="flex-1 bg-background">
       <ScrollView
         className="flex-1 px-4"
         showsVerticalScrollIndicator={false}
@@ -335,12 +387,17 @@ export default function FocusTab() {
           <TouchableOpacity
             onPress={handleOpenTaskSelection}
             disabled={incompleteTasks.length === 0}
-            className={`w-full py-4 rounded-2xl items-center ${incompleteTasks.length > 0 ? 'bg-white' : 'bg-gray-800'
+            className={`flex-row justify-center w-full py-4 rounded-2xl items-center ${incompleteTasks.length > 0 ? 'bg-white' : 'bg-gray-800'
               }`}
             activeOpacity={0.85}
           >
+            {
+              incompleteTasks.length > 0 && (
+                <MaterialIcons name="airplane-ticket" size={24} color="black" />
+              )
+            }
             <Text
-              className={`font-primary-bold text-base ${incompleteTasks.length > 0 ? 'text-background' : 'text-gray-600'
+              className={`pl-2 font-primary-bold text-base ${incompleteTasks.length > 0 ? 'text-background' : 'text-gray-600'
                 }`}
             >
               {incompleteTasks.length > 0 ? 'Start Focus Session' : 'Add a task to begin'}

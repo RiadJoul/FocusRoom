@@ -278,7 +278,9 @@ export function BlockAppsBottomSheet({
             </Text>
 
             <DeviceActivitySelectionViewPersisted
-              style={{ height: 460 }}
+              style={{ height: 460}}
+              
+
               familyActivitySelectionId="focusroom_block_apps"
               onSelectionChange={() => {
                 // Native view persists selection under this id.

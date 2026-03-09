@@ -7,10 +7,9 @@ import { useUserStore } from '@/lib/stores/userStore';
 import { DistanceUnit, saveDistanceUnitPreference } from '@/lib/utils/distance';
 import { supabase, SUPABASE_KEY, SUPABASE_URL } from '@/lib/supabase';
 import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image, ActivityIndicator, Alert, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Purchases from 'react-native-purchases';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +19,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as StoreReview from 'expo-store-review';
 import { NotificationsBottomSheet } from '@/components/cockpit/NotificationsBottomSheet';
 import { BlockAppsBottomSheet } from '@/components/cockpit/BlockingApps';
+import { WidgetBottomSheet } from '@/components/cockpit/WidgetBottomSheet';
+import Constants from 'expo-constants';
+import { LiveActivityBottomSheet } from '@/components/cockpit/LiveActivityBottomSheet';
+import { StandbyBottomSheet } from '@/components/cockpit/StandByBottomSheet';
 
 export default function Cockpit() {
   const user = useUserStore((state) => state.user);
@@ -29,7 +32,6 @@ export default function Cockpit() {
   const tasks = useTaskStore((state) => state.tasks);
   const addTask = useTaskStore((state) => state.addTask);
   const addList = useListStore((state) => state.addList);
-  const createSession = useSessionStore((state) => state.createSession);
   const router = useRouter();
 
 
@@ -45,6 +47,9 @@ export default function Cockpit() {
 
   const notificationsSheetRef = useRef<BottomSheet | null>(null);
   const blockAppsSheetRef = useRef<BottomSheet | null>(null);
+  const liveActivitySheetRef = useRef<BottomSheet | null>(null);
+  const widgetSheetRef = useRef<BottomSheet | null>(null);
+  const standbySheetRef = useRef<BottomSheet | null>(null);
 
   // Load stats on mount
   useEffect(() => {
@@ -125,11 +130,22 @@ export default function Cockpit() {
           onPress: async () => {
             try {
               // Create lists
-              const mathList = await addList('Math', 'calculator-outline', '#38bdf8');
-              const biologyList = await addList('Biology', 'leaf-outline', '#10b981');
-              const workoutList = await addList('Workout', 'barbell-outline', '#22c55e');
+              // use light colors for good screenshot contrast in both light/dark mode and dont use similar colors
+              
+              const mathList = await addList('Math', 'calculator-outline', '#fce303');
+              const biologyList = await addList('Biology', 'leaf-outline', '#5fff59');
+              const workoutList = await addList('Workout', 'barbell-outline', '#59f9ff');
+              const codingList = await addList('Coding', 'code-slash-outline', '#534fe0');
+              const emailList = await addList('Emails', 'document-text-outline', '#e0ba4f');
+              const languagesList = await addList('Languages', 'language-outline', '#4fd4e0');
+              const journalingList = await addList('Journaling', 'newspaper-outline', '#4fe073');
+              const meditationList = await addList('Meditation', 'heart-circle-outline', '#21db4f');
+              const readingList = await addList('Reading', 'book-outline', '#f75c6e');
+              const schoolList = await addList('School', 'school-outline', '#ed8ff7');
+              const brainStormingList = await addList('Brainstorming', 'bulb-outline', '#ff5e5e');
+              
 
-              const lists = [workoutList,mathList, biologyList].filter(Boolean) as {
+              const lists = [workoutList, mathList, biologyList, codingList, emailList, languagesList, journalingList, meditationList, readingList, schoolList, brainStormingList].filter(Boolean) as {
                 id: string;
               }[];
 
@@ -146,30 +162,59 @@ export default function Cockpit() {
               await addTask(lists[2].id, 'Complete lab report on photosynthesis', 'medium');
               await addTask(lists[2].id, 'Memorize anatomy terms', 'low');
 
+              await addTask(lists[3].id, 'Review JavaScript concepts', 'medium');
+              await addTask(lists[3].id, 'Practice coding challenges', 'low');
 
-              // Create focus sessions over last 7 days for excellent Focus Health
+              await addTask(lists[4].id, 'Reply to client emails', 'high');
+              await addTask(lists[4].id, 'Organize inbox', 'medium');
+              await addTask(lists[4].id, 'Unsubscribe from newsletters', 'low');
+
+              await addTask(lists[5].id, 'Practice Spanish', 'high');
+              await addTask(lists[5].id, 'Review French grammar', 'medium');
+              await addTask(lists[5].id, 'Learn new vocabulary', 'low');
+
+
+              // Create focus sessions over the last 90 days for vivid stats / widgets.
+              // IMPORTANT: we set created_at to the same day as started_at so that
+              // the habit widget (which groups by created_at) reflects the history.
               const now = new Date();
-              for (let i = 6; i >= 0; i--) {
-                const start = new Date(now);
-                start.setDate(now.getDate() - i);
-                start.setHours(9, 0, 0, 0);
+              for (let i = 89; i >= 0; i--) {
+                const day = new Date(now);
+                day.setDate(now.getDate() - i);
 
-                const durationSeconds = 60 * 60; // 60 min
-                const end = new Date(start.getTime() + durationSeconds * 1000);
+                // Randomly decide if this day has sessions (to make the habit grid interesting)
+                const hasSessionToday = Math.random() < 0.8; // 80% of days have focus
+                if (!hasSessionToday) continue;
 
-                await createSession({
-                  user_id: user.id,
-                  started_at: start.toISOString(),
-                  ended_at: end.toISOString(),
-                  duration_seconds: durationSeconds,
-                  tasks_completed: 3,
-                  trip_id: 'earth-mars',
-                  trip_name: 'Earth → Mars',
-                  distance_km: 225_000_000,
-                });
+                // Number of sessions for the day: 1–2
+                const sessionsToday = Math.random() < 0.3 ? 2 : 1;
+
+                for (let s = 0; s < sessionsToday; s++) {
+                  const start = new Date(day);
+                  // Random start hour between 7:00 and 21:00
+                  const startHour = 7 + Math.floor(Math.random() * 14);
+                  start.setHours(startHour, 0, 0, 0);
+
+                  // Duration between 30 and 90 minutes
+                  const durationMinutes = 30 + Math.floor(Math.random() * 60);
+                  const durationSeconds = durationMinutes * 60;
+                  const end = new Date(start.getTime() + durationSeconds * 1000);
+
+                  await supabase.from('focus_sessions').insert({
+                    user_id: user.id,
+                    started_at: start.toISOString(),
+                    ended_at: end.toISOString(),
+                    duration_seconds: durationSeconds,
+                    tasks_completed: 2 + Math.floor(Math.random() * 3),
+                    trip_id: 'earth-mars',
+                    trip_name: 'Earth → Mars',
+                    distance_km: 1_000 + Math.floor(Math.random() * 9_000),
+                    created_at: start.toISOString(),
+                  });
+                }
               }
 
-              // Refresh stats
+              // Refresh stats so cockpit + widgets reflect new data
               await fetchStats(user.id);
 
               Alert.alert('Done', 'Sample data added. You can now take screenshots.');
@@ -298,7 +343,7 @@ export default function Cockpit() {
     );
   };
 
-  async function presentPaywall(): Promise<boolean> {
+  async function presentPaywall(source: string): Promise<boolean> {
     // Prevent re-entrancy
     if (isPresentingPaywall) return false;
     setIsPresentingPaywall(true);
@@ -306,7 +351,7 @@ export default function Cockpit() {
     try {
       return await presentPaywallOnce({
         userId: user?.id,
-        source: 'cockpit_screen',
+        source: source,
       });
     } finally {
       setIsPresentingPaywall(false);
@@ -396,7 +441,7 @@ export default function Cockpit() {
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-x-3">
           {icon}
-          <Text className={`font-primary-semibold text-base ${danger ? 'text-red-500' : 'text-white'
+          <Text className={`font-primary-medium text-base ${danger ? 'text-red-500' : 'text-white'
             }`}>
             {title}
           </Text>
@@ -419,7 +464,9 @@ export default function Cockpit() {
 
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      className="flex-1 bg-background">
       <ScrollView
         className="flex-1 px-4"
         showsVerticalScrollIndicator={false}
@@ -430,11 +477,9 @@ export default function Cockpit() {
           <Text className="text-2xl font-primary-bold text-white">Cockpit</Text>
         </View>
 
-
-
         {/* User Info Card */}
         <View className="pb-6">
-          <View className="bg-card rounded-2xl p-6">
+          <View className="bg-card rounded-2xl px-6 py-3">
             <View className="flex-row items-center mb-4">
               {/* Avatar */}
               <View className="w-16 h-16 rounded-full bg-black items-center justify-center mr-4">
@@ -507,9 +552,7 @@ export default function Cockpit() {
                     )}
                   </View>
                 )}
-                <Text className="text-gray-400 font-primary-medium text-sm mt-1">
-                  {user?.email || 'user@example.com'}
-                </Text>
+
 
               </View>
             </View>
@@ -524,7 +567,7 @@ export default function Cockpit() {
               <StatCard
                 value={isLoading ? '...' : dayStreak}
                 label="Day Streak"
-                icon={<MaterialCommunityIcons name="fire" size={24} color="white" />}
+                icon={<MaterialCommunityIcons name="fire" size={24} color={`${dayStreak >= 7 ? 'orange' : 'white'}`} />}
               />
               <StatCard
                 value={isLoading ? '...' : `${successRate}%`}
@@ -538,63 +581,56 @@ export default function Cockpit() {
 
         {/* Premium Upsell Banner */}
         {!user?.is_premium && (
-          <TouchableOpacity
-            onPress={() => presentPaywall()}
-            activeOpacity={0.9}
-            className="mb-6"
-          >
-            <LinearGradient
-              colors={['#4c1d95', '#0f172a', '#020617']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
+          <View className="px-2 py-2 mb-6">
+
+            <View className='flex-row mb-2'>
+              <View className="flex-row items-center mb-4">
+                <View className='p-0.5 bg-red-400 rounded-lg -rotate-12'>
+                  <Image source={require('../../assets/memojis/memoji-1.png')}
+                    style={{ width: 28, height: 28 }}
+                  />
+                </View>
+                <View className='p-1 bg-purple-400 rounded-lg rotate-12'>
+                  <Image source={require('../../assets/memojis/memoji-2.png')}
+                    style={{ width: 24, height: 24 }}
+                  /></View>
+                <View className='p-1 bg-yellow-400 rounded-lg -rotate-6'>
+                  <Image source={require('../../assets/memojis/memoji-3.png')}
+                    style={{ width: 24, height: 24 }}
+                  /></View>
+              </View>
+              <View className='pl-4'>
+                {/* Title */}
+                <Text className="text-white text-start font-primary-bold text-sm">
+                  +12k users are already flying first class.
+                </Text>
+                <Text className="text-gray-400 text-start font-primary-regular text-xs mb-4">
+                  Enhance your focus experience now.
+                </Text>
+              </View>
+
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => presentPaywall('cockpit_upsell_banner')}
+              className="bg-white"
               style={{
-                borderRadius: 12,
-                paddingHorizontal: 16,
-                paddingVertical: 14,
-                borderWidth: 1,
-                borderColor: '#a855f7',
+                borderRadius: 999,
+                paddingVertical: 10,
+                alignItems: 'center',
                 shadowColor: '#a855f7',
-                shadowOpacity: 0.45,
-                shadowRadius: 18,
+                shadowOpacity: 0.9,
+                shadowRadius: 14,
                 shadowOffset: { width: 0, height: 0 },
               }}
             >
-              <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center">
-                  <View className="w-9 h-9 rounded-2xl bg-secondary/25 items-center justify-center mr-3">
-                    <Ionicons name="ticket-outline" size={20} color="#E5E7EB" />
-                  </View>
-                  <Text className="text-[11px] font-primary-bold text-indigo-200 tracking-[0.16em] uppercase">
-                    First Class
-                  </Text>
-                </View>
+              <Text className="text-black font-primary-semibold text-lg">
+                Unlock First Class
+              </Text>
+            </TouchableOpacity>
 
-                <View className="px-3 py-1 rounded-full bg-white">
-                  <Text className="text-xs font-primary-bold text-black">
-                    7 days free
-                  </Text>
-                </View>
-              </View>
-
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1">
-                  <Text
-                    className="text-gray-100 font-primary-medium text-xs"
-                    numberOfLines={2}
-                  >
-                    Unlock 3D flights, advanced stats, unlimited recurring missions & list slots.
-                  </Text>
-                </View>
-
-                <View className="flex-row items-center ml-3">
-                  <Text className="text-xs font-primary-semibold text-indigo-100 mr-1">
-                    Upgrade
-                  </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#E5E7EB" />
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+          </View>
         )}
 
 
@@ -678,8 +714,8 @@ export default function Cockpit() {
           </TouchableOpacity>
         </View>
 
-        
-        
+
+
         )}
 
         {/* Actions Items */}
@@ -695,7 +731,7 @@ export default function Cockpit() {
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-x-3">
                 <Ionicons name="notifications-outline" size={24} color="white" />
-                <Text className="font-primary-semibold text-base text-white">
+                <Text className="font-primary-medium text-base text-white">
                   Notifications
                 </Text>
               </View>
@@ -720,8 +756,7 @@ export default function Cockpit() {
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-x-3">
                 <MaterialCommunityIcons name="focus-field" size={24} color="white" />
-                {/* <Ionicons name="shield-outline" size={24} color="white" /> */}
-                <Text className="font-primary-semibold text-base text-white">
+                <Text className="font-primary-medium text-base text-white">
                   Block apps during focus
                 </Text>
               </View>
@@ -748,7 +783,7 @@ export default function Cockpit() {
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-x-3">
                 <Ionicons name="swap-horizontal-outline" size={24} color="white" />
-                <Text className="font-primary-semibold text-base text-white">
+                <Text className="font-primary-medium text-base text-white">
                   Current distance unit
                 </Text>
               </View>
@@ -762,11 +797,92 @@ export default function Cockpit() {
               </View>
             </View>
           </TouchableOpacity>
+          {/* Widgets */}
+          <TouchableOpacity
+            onPress={() => widgetSheetRef.current?.expand?.()}
+            className={`bg-card rounded-xl p-4 mb-3`}
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <MaterialCommunityIcons name="card-multiple-outline" size={24} color="white" />
+                <View>
+                  <Text className="font-primary-medium text-base text-white">
+                    Widgets
+                  </Text>
+
+                </View>
+              </View>
+              <View className="flex flex-row gap-x-2 items-center">
+                <View
+                  className={`w-2 h-2 rounded-full ${user?.is_premium ? 'bg-green-500' : 'bg-gray-500'
+                    }`}
+                />
+                <Text className="text-white font-primary-regular">
+                  {user?.is_premium ? 'ON' : 'OFF'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          {/* Live Activity */}
+          <TouchableOpacity
+            onPress={() => liveActivitySheetRef.current?.expand()}
+            className="bg-card rounded-xl p-4 mb-3"
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <Ionicons name="phone-portrait-outline" size={24} color="white" />
+                <Text className="font-primary-medium text-base text-white">
+                  Live Activity
+                </Text>
+              </View>
+              <View className="flex flex-row gap-x-2 items-center">
+                <View
+                  className={`w-2 h-2 rounded-full ${user?.is_premium ? 'bg-green-500' : 'bg-gray-500'
+                    }`}
+                />
+                <Text className="text-white font-primary-regular">
+                  {user?.is_premium ? 'ON' : 'OFF'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          {/* Stand By */}
+          <TouchableOpacity
+            onPress={() => standbySheetRef.current?.expand?.()}
+            className={`bg-card rounded-xl p-4 mb-3`}
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <Ionicons name="phone-landscape-outline" size={24} color="white" />
+                <View>
+                  <Text className="font-primary-medium text-base text-white">
+                    Stand By
+                  </Text>
+
+                </View>
+              </View>
+              <View className="flex flex-row gap-x-2 items-center">
+                <View
+                  className={`w-2 h-2 rounded-full ${user?.is_premium ? 'bg-green-500' : 'bg-gray-500'
+                    }`}
+                />
+                <Text className="text-white font-primary-regular">
+                  {user?.is_premium ? 'ON' : 'OFF'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
         </View>
 
         {/* Menu Items */}
         <View className="pb-4">
           <Text className="text-lg font-primary-bold text-white mb-4">About</Text>
+
+
           <TouchableOpacity
             onPress={async () => {
               try {
@@ -808,11 +924,34 @@ export default function Cockpit() {
               <View className="flex-row items-center gap-x-3">
                 <FontAwesome5 name="hand-holding-heart" size={24} color="#fb7185" />
                 <View>
-                  <Text className="font-primary-semibold text-base text-white">
+                  <Text className="font-primary-medium text-base text-white">
                     Show us some love
                   </Text>
                   <Text className="text-gray-400 text-xs font-primary-medium mt-0.5">
                     Leave a quick review in the App Store.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              Linking.openURL(websiteUrl).catch(() => {
+                Alert.alert('Error', 'Failed to open website');
+              });
+            }}
+            className="bg-card rounded-xl p-4 mb-3"
+            activeOpacity={0.7}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-x-3">
+                <MaterialCommunityIcons name="space-station" size={24} color="#a855f7" />
+                <View>
+                  <Text className="font-primary-medium text-base text-white">
+                    What is FocusRoom?
+                  </Text>
+                  <Text className="text-gray-400 text-xs font-primary-medium mt-0.5">
+                    Learn more about FocusRoom.
                   </Text>
                 </View>
               </View>
@@ -846,15 +985,7 @@ export default function Cockpit() {
             }}
           />
 
-          <MenuItem
-            icon={<Ionicons name="information-circle-outline" size={24} color="white" />}
-            title="About FocusRoom"
-            onPress={() => {
-              Linking.openURL(websiteUrl).catch(() => {
-                Alert.alert('Error', 'Failed to open Privacy Policy');
-              });
-            }}
-          />
+
         </View>
         {/* Danger zone */}
         <View className="pb-4">
@@ -882,7 +1013,7 @@ export default function Cockpit() {
             className="bg-red-500/10 border border-red-500/30 py-5 rounded-2xl items-center"
             activeOpacity={0.8}
           >
-            <Text className="text-red-500 font-primary-bold text-lg">
+            <Text className="text-red-500 font-primary-semibold text-lg">
               Sign Out
             </Text>
           </TouchableOpacity>
@@ -891,7 +1022,9 @@ export default function Cockpit() {
         {/* App Version */}
         <View className="items-center pt-6">
           <Text className="text-gray-600 text-xs font-primary-medium">
-            FocusRoom V2.0
+            FocusRoom V{
+              Constants.manifest?.version
+            }
           </Text>
         </View>
       </ScrollView>
@@ -909,6 +1042,24 @@ export default function Cockpit() {
         bottomSheetRef={blockAppsSheetRef}
         isEnabled={isBlockingAppsEnabled}
         onChangeEnabled={handleChangeBlockAppsEnabled}
+      />
+
+      <LiveActivityBottomSheet
+        bottomSheetRef={liveActivitySheetRef}
+        isPremium={!!user?.is_premium}
+        onPressUpgrade={() => presentPaywall("cockpit_live_activity_paywall")}
+      />
+
+      <WidgetBottomSheet
+        bottomSheetRef={widgetSheetRef}
+        isPremium={!!user?.is_premium}
+        onPressUpgrade={() => presentPaywall("cockpit_widget_paywall")}
+      />
+
+      <StandbyBottomSheet
+        bottomSheetRef={standbySheetRef}
+        isPremium={!!user?.is_premium}
+        onPressUpgrade={() => presentPaywall("cockpit_standby_paywall")}
       />
 
     </SafeAreaView>

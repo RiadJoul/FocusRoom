@@ -5,7 +5,7 @@ import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, TouchableOpacity, View, ScrollView } from 'react-native';
+import { Text, TouchableOpacity, View, ScrollView, Platform, Image } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
@@ -26,6 +26,7 @@ import { formatDueDate } from '@/lib/utils/dateUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUserStore } from '@/lib/stores/userStore';
 import { formatDistanceWithUnit } from '@/lib/utils/distance';
+import { clearMissionState, updateMissionState, updateMissionProgress } from '@/lib/missionState';
 
 interface FocusSessionScreenProps {
   tasks: Task[];
@@ -33,6 +34,7 @@ interface FocusSessionScreenProps {
   onEndSession: (duration: number, tasksCompleted: string[]) => void;
   onMarkTasksComplete: (taskIds: string[]) => void;
   mode?: '3d' | 'map';
+  onChangeMode?: (mode: '3d' | 'map') => void;
 }
 
 
@@ -42,6 +44,7 @@ export function FocusSessionScreen({
   onEndSession,
   onMarkTasksComplete,
   mode = '3d',
+  onChangeMode,
 }: FocusSessionScreenProps) {
   type AmbientSoundKey = 'space-rumble' | 'rain-drops';
 
@@ -60,9 +63,10 @@ export function FocusSessionScreen({
   const [sessionEndTimestamp, setSessionEndTimestamp] = useState<number>(
     () => Date.now() + trip.duration * 1000
   );
-  const pauseStartedAtRef = useRef<number | null>(null);
   const notificationIdRef = useRef<string | null>(null);
+  const lastMissionProgressBucketRef = useRef(0);
   const distanceUnit = useUserStore((s) => s.distanceUnit);
+  const user = useUserStore((s) => s.user);
 
   // Load preferred ambient sound from storage
   useEffect(() => {
@@ -78,6 +82,26 @@ export function FocusSessionScreen({
     };
 
     loadPreferredSound();
+  }, []);
+
+  // Start Live Activity for premium users on iOS when the session begins.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!user?.is_premium) return;
+
+    const liveTitle = `${trip.from} → ${trip.to}`;
+
+    updateMissionState({
+      title: liveTitle,
+      endTimestampSeconds: Math.floor(sessionEndTimestamp / 1000),
+      progress: 0,
+    }).catch(() => { });
+
+    return () => {
+      clearMissionState().catch(() => { });
+    };
+    // We intentionally run this only once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Setup and play ambient sound
@@ -195,6 +219,13 @@ export function FocusSessionScreen({
     };
 
     stopSound();
+
+    // End any active Live Activity as soon as the session ends so the
+    // lock‑screen card disappears instead of lingering until we leave
+    // the debrief screen.
+    if (Platform.OS === 'ios') {
+      clearMissionState().catch(() => { });
+    }
   }, [sessionEnded]);
 
   // Schedule a completion notification once, based on the expected end time.
@@ -275,7 +306,21 @@ export function FocusSessionScreen({
           intervalRef.current = null;
         }
       } else {
-        setRemainingSeconds(Math.ceil(remainingMs / 1000));
+        const nextRemainingSeconds = Math.ceil(remainingMs / 1000);
+        setRemainingSeconds(nextRemainingSeconds);
+
+        // Update Live Activity progress in coarse steps (every 10%) for
+        // premium iOS users while the app is in the foreground.
+        if (Platform.OS === 'ios' && user?.is_premium) {
+          const fraction = 1 - nextRemainingSeconds / trip.duration;
+          const clamped = Math.max(0, Math.min(1, fraction));
+          // Bucket into 10% steps: 0.0, 0.1, 0.2, ...
+          const bucket = Math.floor(clamped * 10) / 10;
+          if (bucket > lastMissionProgressBucketRef.current) {
+            lastMissionProgressBucketRef.current = bucket;
+            updateMissionProgress(bucket).catch(() => { });
+          }
+        }
       }
     };
 
@@ -318,20 +363,37 @@ export function FocusSessionScreen({
   // Calculate remaining distance based on progress
   const remainingDistance = Math.floor((remainingSeconds / trip.duration) * trip.distance_km);
 
+
+
   const handlePause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setShowGiveUpMenu(false);
     setIsPaused((prev) => {
       const next = !prev;
+
       if (next) {
-        // Pausing: remember when we paused so we can shift end time on resume.
-        pauseStartedAtRef.current = Date.now();
-      } else if (pauseStartedAtRef.current) {
-        // Resuming: push the end timestamp forward by the paused duration.
-        const pauseDuration = Date.now() - pauseStartedAtRef.current;
-        setSessionEndTimestamp((prevEnd) => prevEnd + pauseDuration);
-        pauseStartedAtRef.current = null;
+        // Pausing: stop the Live Activity so the lock‑screen card
+        // does not keep counting down while the session is paused.
+        if (Platform.OS === 'ios' && user?.is_premium) {
+          clearMissionState().catch(() => { });
+        }
+      } else {
+        // Resuming: recompute the end timestamp from the *current*
+        // remaining seconds and restart the Live Activity with that
+        // updated end time.
+        const newEnd = Date.now() + remainingSeconds * 1000;
+        setSessionEndTimestamp(newEnd);
+
+        if (Platform.OS === 'ios' && user?.is_premium) {
+          const liveTitle = `${trip.from} → ${trip.to}`;
+          updateMissionState({
+            title: liveTitle,
+            endTimestampSeconds: Math.floor(newEnd / 1000),
+            progress: 1 - remainingSeconds / trip.duration,
+          }).catch(() => { });
+        }
       }
+
       return next;
     });
   };
@@ -446,7 +508,6 @@ export function FocusSessionScreen({
       ['#000000', '#ffffff'],
     ),
   }));
-
 
   if (sessionEnded) {
     const elapsedSeconds = trip.duration - remainingSeconds;
@@ -677,42 +738,7 @@ export function FocusSessionScreen({
         {/* UI Overlay */}
         <SafeAreaView className="flex-1" style={{ backgroundColor: 'transparent' }}>
 
-          {/* Progress Track - Right Side */}
-          <View className="absolute right-6 top-28 bottom-16" style={{ width: 4 }}>
-            {/* Track Background */}
-            <View className="absolute inset-0 bg-gray-800/50 rounded-full" />
 
-            {/* Progress Fill */}
-            <Animated.View
-              className="absolute bottom-0 left-0 right-0 bg-primary rounded-full"
-              style={{
-                height: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
-              }}
-            />
-
-            {/* Rocket Icon */}
-            <Animated.View
-              className="absolute -left-3"
-              style={{
-                bottom: `${((trip.duration - remainingSeconds) / trip.duration) * 100}%`,
-                transform: [{ translateY: 10 }],
-              }}
-            >
-              <Text className="text-3xl pr-12">
-                <MaterialCommunityIcons name="rocket-outline" size={24} color="white" />
-              </Text>
-            </Animated.View>
-
-            {/* Start Point */}
-            <View className="" />
-
-            {/* End Point */}
-            <View className="">
-              <Text className="absolute -top-7 -left-3 text-xl pr-12">
-                <Ionicons name="planet-outline" size={24} color="white" />
-              </Text>
-            </View>
-          </View>
 
           {/* Header with Timer */}
           <Animated.View entering={FadeInDown} className="px-6 py-4">
@@ -740,8 +766,34 @@ export function FocusSessionScreen({
                 </View>
               </View>
 
-              {/* Right Side - Empty for balance */}
-              <View className="w-12" />
+              {/* Right Side - Toggle 3D/2D */}
+              <View>
+                <TouchableOpacity
+                  onPress={() => {
+                    const next = mode === 'map' ? '3d' : 'map';
+                    onChangeMode?.(next);
+                  }}
+                  activeOpacity={0.8}
+                  className="flex-col items-center rounded-xl bg-gray-200 px-1.5 py-1 border-2 border-gray-700"
+                >
+                  
+                  {
+                    mode === 'map' ?
+                      <Image
+                        source={require('@/assets/icons/cockpit.png')}
+                        style={{ width: 25, height: 25  }}
+                      /> :
+                      <Image
+                        source={require('@/assets/icons/rocket.png')}
+                        style={{ width: 25, height: 25 }}
+                      />
+
+                  }
+                  <Text className="text-xs font-primary-medium text-gray-800 ">
+                    {mode === 'map' ? '3D' : '2D'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </Animated.View>
 
@@ -838,24 +890,24 @@ export function FocusSessionScreen({
 
                   {/* Sound picker */}
                   {showSoundPicker && (
-                    <View className="px-5 pt-3">
+                    <View className="px-5 pt-5">
                       {/* Mute + volume pill */}
-                      <View className="flex-row items-center justify-between mb-3">
+                      <View className="flex-row items-center justify-between mb-5">
                         <TouchableOpacity
                           onPress={() => {
                             Haptics.selectionAsync().catch(() => { });
                             setIsMuted((prev) => !prev);
                           }}
                           activeOpacity={0.8}
-                          className="flex-row items-center rounded-full bg-black/60 px-3 py-1.5 border border-gray-700"
+                          className="flex-row items-center rounded-xl bg-black/60 px-3 py-1.5 border border-gray-700"
                         >
                           <Ionicons
                             name={isMuted ? 'volume-mute' : 'volume-medium'}
                             size={16}
                             color="#e5e7eb"
                           />
-                          <Text className="ml-2 text-xs font-primary-medium text-gray-200">
-                            {isMuted ? 'Ambient sound off' : 'Ambient sound on'}
+                          <Text className="ml-2 text-sm font-primary-medium text-gray-200">
+                            {isMuted ? 'Turn on sound' : 'Turn off sound'}
                           </Text>
                         </TouchableOpacity>
 
@@ -982,6 +1034,7 @@ export function FocusSessionScreen({
                             </Text>
                           </View>
                         </TouchableOpacity>
+                        
                       </View>
                     </View>
                   )}

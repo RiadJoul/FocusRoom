@@ -50,7 +50,7 @@ export function FloatingAddButton({ onPress, onLongPress }: FloatingAddButtonPro
     try {
       return await presentPaywallOnce({
         userId: user?.id,
-        source: 'Recurring List Task Button',
+        source: 'recurring_tasks_button',
       });
     } finally {
       setIsPresentingPaywall(false);

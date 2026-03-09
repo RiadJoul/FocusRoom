@@ -44,6 +44,20 @@ export const LIST_ICONS = [
   { name: 'cafe-outline', label: 'Coffee' },
   { name: 'headset-outline', label: 'Podcasts' },
   { name: 'browsers-outline', label: 'Research' },
-
+  { name: 'binoculars-outline', label: 'Exploration' },
+  { name: 'business-outline', label: 'Entrepreneurship' },
+  { name: 'color-palette-outline', label: 'Design' },
+  { name: 'document-attach-outline', label: 'Admin' },
+  { name: 'eye-outline', label: 'Vision' },
+  { name: 'finger-print-outline', label: 'Security' },
+  { name: 'gift-outline', label: 'Gifts' },
+  { name: 'hammer-outline', label: 'Maintenance' },
+  { name: 'shield-checkmark-outline', label: 'Insurance' },
+  { name: 'snow-outline', label: 'Winter' },
+  { name: 'sunny-outline', label: 'Summer' },
+  { name: 'cloud-outline', label: 'Weather' },
+  { name: 'moon-outline', label: 'Night' },
+  { name: 'car-outline', label: 'Automotive' },
+  { name: 'card-outline', label: 'Credit Cards' },
 ];
 

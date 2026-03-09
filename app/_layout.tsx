@@ -3,32 +3,38 @@ import {
   Poppins_500Medium,
   Poppins_600SemiBold,
   Poppins_700Bold,
-  useFonts
-} from "@expo-google-fonts/poppins";
+  useFonts,
+} from '@expo-google-fonts/poppins';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useRouter } from 'expo-router';
+import NetInfo from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import NetInfo from '@react-native-community/netinfo';
-import { Linking, Platform, Pressable, StyleSheet, Text, View, AppState } from 'react-native';
+import {
+  AppState,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Purchases from 'react-native-purchases';
-import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import "../global.css";
+import '../global.css';
 import { analytics, Events } from '../lib/analytics';
 import { useUserStore } from '../lib/stores/userStore';
+import { useSessionStore } from '../lib/stores/sessionStore';
 import { supabase } from '../lib/supabase';
-import * as Notifications from 'expo-notifications';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
-  updateShield,
+  ShieldConfiguration,
   getFamilyActivitySelectionId,
   unblockSelection,
-  ShieldConfiguration,
+  updateShield,
 } from 'react-native-device-activity';
-import { KochavaTracker, KochavaTrackerLogLevel } from 'react-native-kochava-tracker';
-
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
@@ -70,6 +76,7 @@ let hasTrackedAppOpened = false;
 
 export default function RootLayout() {
   const user = useUserStore((state) => state.user);
+  const fetchStats = useSessionStore((state) => state.fetchStats);
   const router = useRouter();
   const [fontsLoaded, fontsError] = useFonts({
     Poppins_400Regular,
@@ -78,17 +85,15 @@ export default function RootLayout() {
     Poppins_700Bold,
   });
 
-
   const [checking, setChecking] = useState(true);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
-  const REVENUECAT_APPLE_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
-  const KOCHAVA_APP_GUID = process.env.EXPO_PUBLIC_KOCHAVA_APP_GUID as string;
+  const REVENUECAT_APPLE_API_KEY =
+    process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY as string;
 
   const [isRevenueCatReady, setIsRevenueCatReady] = useState(false);
   const [hasCheckedPaywall, setHasCheckedPaywall] = useState(false);
-  const [hasCheckedKochavaAttribution, setHasCheckedKochavaAttribution] = useState(false);
 
   // Configure RevenueCat once on mount
   useEffect(() => {
@@ -97,22 +102,17 @@ export default function RootLayout() {
       Purchases.configure({ apiKey: REVENUECAT_APPLE_API_KEY });
       setIsRevenueCatReady(true);
     }
+    // We intentionally omit REVENUECAT_APPLE_API_KEY from deps since it is static at runtime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Configure Kochava once on mount (iOS only)
+  // Keep focus stats (and Habit widget) in sync whenever we have a logged-in user.
+  // This mirrors the fetch done in Focus/Cockpit, but from the root so the
+  // Habit widget updates even if the user never opens those tabs.
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-
-    try {
-      // Register iOS App GUID and start the tracker
-      KochavaTracker.instance.setLogLevel(KochavaTrackerLogLevel.Info);
-      KochavaTracker.instance.registerIosAppGuid(KOCHAVA_APP_GUID);
-      KochavaTracker.instance.start();
-      console.log('✅ Kochava tracker started');
-    } catch (err) {
-      console.warn('Failed to start Kochava tracker', err);
-    }
-  }, []);
+    if (!user?.id) return;
+    fetchStats(user.id);
+  }, [user?.id, fetchStats]);
 
   // Configure Screen Time shield UI once (iOS only)
   useEffect(() => {
@@ -147,7 +147,8 @@ export default function RootLayout() {
         const value = await AsyncStorage.getItem('block_apps_enabled');
         if (value !== 'true') return;
 
-        const selectionToken = getFamilyActivitySelectionId('focusroom_block_apps');
+        const selectionToken =
+          getFamilyActivitySelectionId('focusroom_block_apps');
         if (selectionToken) {
           unblockSelection(
             { activitySelectionId: 'focusroom_block_apps' },
@@ -176,22 +177,11 @@ export default function RootLayout() {
     logInToRevenueCat();
   }, [isRevenueCatReady, user?.id]);
 
-  // Link Kochava identity to Supabase user.id so installs/events can be tied to the user.
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    if (!user?.id) return;
-
-    try {
-      KochavaTracker.instance.registerIdentityLink('user_id', user.id);
-      KochavaTracker.instance.registerDefaultEventUserId(user.id);
-    } catch (err) {
-      console.warn('Failed to register Kochava identity link', err);
-    }
-  }, [user?.id]);
-
+  // Track connectivity
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const offline = !state.isConnected || state.isInternetReachable === false;
+      const offline =
+        !state.isConnected || state.isInternetReachable === false;
       setIsOffline(offline);
     });
 
@@ -200,19 +190,16 @@ export default function RootLayout() {
     };
   }, []);
 
-
-  // Initialize Mixpanel
+  // Initialize analytics
   useEffect(() => {
     const initServices = async () => {
       try {
-        // Initialize analytics
         await analytics.init();
         console.log('✅ Mixpanel ready, tracking app open');
         if (!hasTrackedAppOpened) {
           hasTrackedAppOpened = true;
           await analytics.track(Events.APP_OPENED);
         }
-
       } catch (error) {
         console.error('❌ Failed to initialize services:', error);
       }
@@ -229,15 +216,17 @@ export default function RootLayout() {
       if (user.is_premium) return;
 
       try {
-        // Do not show the soft paywall until the user has completed
-        // the post-login onboarding flow once.
-        const hasSeenPostLogin = await AsyncStorage.getItem('hasSeenPostLoginOnboarding');
+        const hasSeenPostLogin = await AsyncStorage.getItem(
+          'hasSeenPostLoginOnboarding',
+        );
         if (!hasSeenPostLogin) {
           setHasCheckedPaywall(true);
           return;
         }
 
-        const lastShownRaw = await AsyncStorage.getItem('paywall_last_shown_root_layout');
+        const lastShownRaw = await AsyncStorage.getItem(
+          'paywall_last_shown_root_layout',
+        );
         const now = Date.now();
         const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
@@ -249,17 +238,21 @@ export default function RootLayout() {
           }
         }
 
-        // Only here if we either never showed, or it has been >= 2 hours
         setHasCheckedPaywall(true);
 
-        const { presentPaywallOnce } = await import('../lib/paywall/presentPaywall');
+        const { presentPaywallOnce } = await import(
+          '../lib/paywall/presentPaywall'
+        );
         const didPurchase = await presentPaywallOnce({
           userId: user.id,
           source: 'layout',
         });
 
         if (!didPurchase) {
-          await AsyncStorage.setItem('paywall_last_shown_root_layout', String(now));
+          await AsyncStorage.setItem(
+            'paywall_last_shown_root_layout',
+            String(now),
+          );
         }
       } catch (err) {
         console.warn('Failed to maybe show paywall on root layout', err);
@@ -270,17 +263,20 @@ export default function RootLayout() {
     maybeShowPaywall();
   }, [user?.id, user?.is_premium, hasCheckedPaywall]);
 
+  // Initial auth + onboarding routing
   useEffect(() => {
-    if (initialCheckDone) return; // Prevent re-running
+    if (initialCheckDone) return;
 
     let mounted = true;
 
-    async function applyPendingReferralIfNeeded(userId: string, currentUserRow: any | null) {
+    async function applyPendingReferralIfNeeded(
+      userId: string,
+      currentUserRow: any | null,
+    ) {
       try {
         const pendingCode = await AsyncStorage.getItem('pending_referral_code');
         if (!pendingCode) return;
 
-        // If user already has referral_code set in profile, don't overwrite
         if (currentUserRow?.referral_code) {
           await AsyncStorage.removeItem('pending_referral_code');
           return;
@@ -294,7 +290,9 @@ export default function RootLayout() {
         if (!error) {
           const existing = useUserStore.getState().user;
           if (existing) {
-            useUserStore.getState().setUser({ ...existing, referral_code: pendingCode });
+            useUserStore
+              .getState()
+              .setUser({ ...existing, referral_code: pendingCode });
           }
           await AsyncStorage.removeItem('pending_referral_code');
         }
@@ -305,12 +303,10 @@ export default function RootLayout() {
 
     async function check() {
       try {
-        // check Supabase session
         const { data } = await supabase.auth.getSession();
         const session = data?.session ?? null;
 
         if (session?.user) {
-          // already signed in - fetch user profile from public.users
           try {
             const { data: userProfile, error } = await supabase
               .from('users')
@@ -318,7 +314,8 @@ export default function RootLayout() {
               .eq('id', session.user.id)
               .single();
 
-            const profileToUse = !error && userProfile ? userProfile : session.user;
+            const profileToUse =
+              !error && userProfile ? userProfile : session.user;
             useUserStore.getState().setUser(profileToUse);
 
             await applyPendingReferralIfNeeded(session.user.id, userProfile);
@@ -326,7 +323,6 @@ export default function RootLayout() {
             console.error('Error fetching user profile on startup:', err);
             useUserStore.getState().setUser(session.user);
           }
-
 
           if (mounted) {
             setChecking(false);
@@ -349,8 +345,7 @@ export default function RootLayout() {
         }
 
         router.replace('/login' as any);
-      } catch (e) {
-        // fallback to login
+      } catch {
         if (mounted) {
           setChecking(false);
           setInitialCheckDone(true);
@@ -364,87 +359,12 @@ export default function RootLayout() {
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCheckDone]); // Run only once on mount
+  }, [initialCheckDone, router]);
 
-  // After initial auth/profile check, ask Kochava for install attribution once
-  // and, if a referral_code is present, store it like our own referral deep link.
+  // Handle OAuth deep link callback (native builds) once on mount.
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
-    if (!initialCheckDone) return;
-    if (hasCheckedKochavaAttribution) return;
 
-    let cancelled = false;
-
-    const applyReferralCodeFromKochava = async (code: string) => {
-      if (!code) return;
-      console.log('✅ Kochava install attribution contains referral code:', code);
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (authUser) {
-          const { error } = await supabase
-            .from('users')
-            .update({ referral_code: code })
-            .eq('id', authUser.id);
-
-          if (!error) {
-            const existing = useUserStore.getState().user;
-            if (existing) {
-              useUserStore.getState().setUser({ ...existing, referral_code: code });
-            }
-          }
-        } else {
-          await AsyncStorage.setItem('pending_referral_code', code);
-        }
-      } catch (err) {
-        console.warn('Failed to apply referral code from Kochava attribution', err);
-      }
-    };
-
-    const fetchAttribution = async () => {
-      try {
-        const attribution = await KochavaTracker.instance.retrieveInstallAttribution();
-        if (cancelled) return;
-
-        // Log the full object once so we can see which field the referral
-        // code actually arrives in from Kochava / SmartLinks.
-        try {
-          console.log(
-            '📡 Kochava install attribution:',
-            JSON.stringify(attribution, null, 2),
-          );
-        } catch {
-          console.log('📡 Kochava install attribution (non-serializable):', attribution);
-        }
-
-        // attribution.raw is an object that should contain any custom values
-        const raw: any = attribution.raw ?? {};
-        const code: string | undefined =
-          raw.referral_code ??
-          raw.referralCode ??
-          raw.ref_code;
-
-        if (code && attribution.attributed) {
-          await applyReferralCodeFromKochava(code);
-        }
-      } catch (err) {
-        console.warn('Failed to retrieve Kochava install attribution', err);
-      } finally {
-        if (!cancelled) {
-          setHasCheckedKochavaAttribution(true);
-        }
-      }
-    };
-
-    fetchAttribution();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialCheckDone, hasCheckedKochavaAttribution]);
-
-  // Handle deep link OAuth callback (for native builds)
-  useEffect(() => {
     let lastProcessedUrl = '';
 
     const handleDeepLink = async (event: { url: string }) => {
@@ -477,7 +397,7 @@ export default function RootLayout() {
 
         // If not in hash, try query string (after ?)
         if (!accessToken) {
-          const queryPart = url.split('?')[1]?.split('#')[0]; // Get query before hash
+          const queryPart = url.split('?')[1]?.split('#')[0];
           if (queryPart) {
             const queryParams = new URLSearchParams(queryPart);
             accessToken = queryParams.get('access_token');
@@ -504,7 +424,6 @@ export default function RootLayout() {
       }
     };
 
-    // Listen for deep links
     const subscription = Linking.addEventListener('url', handleDeepLink);
 
     // Check if app was opened with a deep link
@@ -517,20 +436,19 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount
+  }, []);
 
-  // log font errors but let the animated splash decide when to hide
+  // Log font errors but let the animated splash decide when to hide.
   useEffect(() => {
     if (fontsError) {
       console.error('Font load error:', fontsError);
     }
   }, [fontsError]);
 
-
   const handleRetryConnection = () => {
     NetInfo.fetch().then((state) => {
-      const offline = !state.isConnected || state.isInternetReachable === false;
+      const offline =
+        !state.isConnected || state.isInternetReachable === false;
       setIsOffline(offline);
     });
   };
@@ -542,71 +460,80 @@ export default function RootLayout() {
     SplashScreen.hideAsync().catch(() => {});
   }, [appIsReady]);
 
+  const offlineOverlayStyles = StyleSheet.create({
+    container: {
+      backgroundColor: '#0A0A0A',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+      gap: 12,
+    },
+    title: {
+      color: 'white',
+      fontSize: 24,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    subtitle: {
+      color: '#A1A1A1',
+      fontSize: 16,
+      textAlign: 'center',
+      marginTop: 12,
+    },
+    button: {
+      marginTop: 8,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 999,
+    },
+    buttonText: {
+      color: '#0A0A0A',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
+
   if (!fontsLoaded && !fontsError) {
     return null;
   }
 
+  
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: '#0A0A0A' },
-              animation: 'fade_from_bottom',
-            }}
+        {/* Use full screen width on iPhone, iPad and Mac */}
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#0A0A0A' },
+            animation: 'fade_from_bottom',
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        </Stack>
+        {isOffline && (
+          <View
+            style={[
+              StyleSheet.absoluteFillObject,
+              offlineOverlayStyles.container,
+            ]}
           >
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          </Stack>
-          {isOffline && (
-            <View style={[StyleSheet.absoluteFillObject, offlineOverlayStyles.container]}>
-              <Text style={offlineOverlayStyles.title}>
-                You're Offline
-              </Text>
-              <Text style={offlineOverlayStyles.subtitle}>
-                FocusRoom needs an internet connection to keep everything in sync. Please reconnect to continue.
-              </Text>
-              <Pressable onPress={handleRetryConnection} style={offlineOverlayStyles.button}>
-                <Text style={offlineOverlayStyles.buttonText}>Retry</Text>
-              </Pressable>
-            </View>
-          )}
-          <StatusBar style="light" />
+            <Text style={offlineOverlayStyles.title}>You&apos;re Offline</Text>
+            <Text style={offlineOverlayStyles.subtitle}>
+              FocusRoom needs an internet connection to keep everything in sync.
+              Please reconnect to continue.
+            </Text>
+            <Pressable
+              onPress={handleRetryConnection}
+              style={offlineOverlayStyles.button}
+            >
+              <Text style={offlineOverlayStyles.buttonText}>Retry</Text>
+            </Pressable>
+          </View>
+        )}
+        <StatusBar style="light" />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
-
-const offlineOverlayStyles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0A0A0A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 12,
-  },
-  title: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: '#A1A1A1',
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  button: {
-    marginTop: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-  },
-  buttonText: {
-    color: '#0A0A0A',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
