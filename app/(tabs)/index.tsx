@@ -9,11 +9,11 @@ import { WeekCalendar } from '@/components/home/WeekCalendar';
 import { useListStore } from '@/lib/stores/listStore';
 import { useTaskStore } from '@/lib/stores/taskStore';
 import { useUserStore } from '@/lib/stores/userStore';
-import { getIncompleteTasks, getTasksForDay, getTopPriorityTasks } from '@/lib/utils/taskUtils';
+import { getIncompleteTasks, getTasksForDay } from '@/lib/utils/taskUtils';
 import BottomSheet from '@gorhom/bottom-sheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Application from 'expo-application';
 import { NewVersionModal } from '@/components/home/NewVersionModal';
@@ -157,10 +157,6 @@ export default function HomeScreen() {
     return getIncompleteTasks(tasksForSelectedDay);
   }, [tasksForSelectedDay]);
 
-  // Get top priority tasks for selected day
-  const topTasks = useMemo(() => {
-    return getTopPriorityTasks(incompleteTasks);
-  }, [incompleteTasks]);
 
   // Keep widget snapshot of today's tasks titles in sync.
   useEffect(() => {
@@ -185,9 +181,9 @@ export default function HomeScreen() {
     }
 
     // Premium user: send top tasks
-    const titles = topTasks.map((t) => t.title);
+    const titles = incompleteTasks.map((t) => t.title);
     updateTodayTasksSnapshot({ titles, state: 'tasks' });
-  }, [topTasks, selectedDay, today, user?.id, user?.is_premium]);
+  }, [incompleteTasks, selectedDay, today, user?.id, user?.is_premium]);
 
 
   // Handler for adding a task
@@ -272,54 +268,42 @@ export default function HomeScreen() {
   }
 
 
+  const listHeaderComponent = (
+    <View>
+      <Header userName={user?.full_name || ''} selectedDay={selectedDay} today={today} />
+      <WeekCalendar selectedDay={selectedDay} today={today} onDaySelect={setSelectedDay} />
+      {loading ? (
+        <View className="flex-1 items-center justify-center py-20">
+          <ActivityIndicator size="large" color="#8F8F8F" />
+          <Text className="text-gray-400 font-primary-medium mt-4">Loading tasks...</Text>
+        </View>
+      ) : incompleteTasks.length === 0 ? (
+        <EmptyState selectedDay={selectedDay} today={today} />
+      ) : (
+        <View className="pt-5">
+          <TasksSectionHeader
+            selectedDay={selectedDay}
+            today={today}
+            taskCount={incompleteTasks.length}
+          />
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView
-    edges={['top', 'left', 'right']}
-    className="flex-1 bg-background pt-5">
-      <ScrollView
-        className="flex-1 px-4"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header Section */}
-        <Header userName={user?.full_name || ''} selectedDay={selectedDay} today={today} />
-
-        {/* Week Calendar */}
-        <WeekCalendar
-          selectedDay={selectedDay}
-          today={today}
-          onDaySelect={setSelectedDay}
-        />
-
-
-        {/* Today's Focus Section or Empty State */}
-        {loading ? (
-          <View className="flex-1 items-center justify-center py-20">
-            <ActivityIndicator size="large" color="#8F8F8F" />
-            <Text className="text-gray-400 font-primary-medium mt-4">Loading tasks...</Text>
-          </View>
-        ) : incompleteTasks.length === 0 ? (
-          <EmptyState selectedDay={selectedDay} today={today} />
-        ) : (
-
-          <View className="pt-5">
-            <TasksSectionHeader
-              selectedDay={selectedDay}
-              today={today}
-              taskCount={topTasks.length}
-            />
-
-            <TaskList
-              tasks={topTasks}
-              lists={lists}
-              onToggleComplete={toggleComplete}
-              onDeleteTask={handleDeleteTask}
-              onMoveTask={handleMoveTask}
-            />
-          </View>
-        )}
-
-       
-      </ScrollView>
+      edges={['top', 'left', 'right']}
+      className="flex-1 bg-background pt-5">
+      <TaskList
+        tasks={!loading && incompleteTasks.length > 0 ? incompleteTasks : []}
+        lists={lists}
+        selectedDay={selectedDay}
+        listHeaderComponent={listHeaderComponent}
+        onToggleComplete={toggleComplete}
+        onDeleteTask={handleDeleteTask}
+        onMoveTask={handleMoveTask}
+      />
 
 
       <NewVersionModal

@@ -98,7 +98,7 @@ export function BlockingAppsSlide() {
               className="absolute top-24 left-4"
               style={{ transform: [{ rotate: counterRotate }] }}
             >
-              
+
               <Ionicons name="logo-snapchat" size={26} color="#FFFC00" />
             </Animated.View>
           </View>

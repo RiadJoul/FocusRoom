@@ -425,7 +425,7 @@ export function NotificationsBottomSheet({
                   <Image
                     source={require('../../assets/icons/ios-light.png')}
                     style={{ width: 45, height: 45 }}
-                    className="rounded-lg"
+                    className="rounded-xl"
                   />
                 </View>
                 <View className="flex-1">

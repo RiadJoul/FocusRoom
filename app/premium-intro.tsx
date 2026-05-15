@@ -14,7 +14,7 @@ const slides = [
   {
     key: 'overview',
     title: 'Welcome to First Class 🚀',
-    subtitle: 'Here’s what you just unlocked in FocusRoom.',
+    subtitle: "Here's what you just unlocked in FocusRoom.",
   },
   {
     key: 'recurring',
@@ -54,7 +54,7 @@ export default function PremiumIntro() {
 
   useEffect(() => {
     setButtonEnabled(false);
-    const timeout = setTimeout(() => setButtonEnabled(true), 500);
+    const timeout = setTimeout(() => setButtonEnabled(true), 200);
     return () => clearTimeout(timeout);
   }, [index]);
 
@@ -174,7 +174,7 @@ export default function PremiumIntro() {
             className={`font-primary-bold text-xl ${buttonEnabled ? 'text-black' : 'text-gray-400'
               }`}
           >
-            {index < slides.length - 1 ? 'Next' : 'Let’s fly'}
+            {index < slides.length - 1 ? 'Next' : 'Let\u2019s fly'}
           </Text>
         </TouchableOpacity>
 

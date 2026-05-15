@@ -2,7 +2,7 @@
   "expo": {
     "name": "FocusRoom",
     "slug": "FocusRoom",
-    "version": "3.1",
+    "version": "3.4",
     "orientation": "portrait",
     "scheme": "focusroom",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
       "icon": {
         "light": "./assets/icons/ios-light.png",
         "dark": "./assets/icons/ios-light.png",
-        "tinted": "./assets/icons/ios-tinted.png"
+        "tinted": "./assets/icons/ios-light.png"
       },
       "config": {
         "usesNonExemptEncryption": false

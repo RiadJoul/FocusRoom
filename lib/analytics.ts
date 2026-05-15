@@ -155,7 +155,7 @@ export const Events = {
   TASK_SELECTED_FOR_SESSION: 'Task Selected for Session',
 
   
-// cockpit
+// Settings
   USERNAME_UPDATED: 'Username Updated',
   
   

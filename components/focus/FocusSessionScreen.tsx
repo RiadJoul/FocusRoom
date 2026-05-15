@@ -3,9 +3,11 @@ import { useListStore } from '@/lib/stores/listStore';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, TouchableOpacity, View, ScrollView, Platform, Image } from 'react-native';
+import { Text, TouchableOpacity, View, ScrollView, Platform, Image, useWindowDimensions } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import { MissionShareCard, SHARE_CARD_WIDTH } from '@/components/shared/MissionShareCard';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
@@ -33,8 +35,10 @@ interface FocusSessionScreenProps {
   trip: PlanetTrip;
   onEndSession: (duration: number, tasksCompleted: string[]) => void;
   onMarkTasksComplete: (taskIds: string[]) => void;
+  onDismiss: () => void;
   mode?: '3d' | 'map';
   onChangeMode?: (mode: '3d' | 'map') => void;
+  onSessionTimerComplete?: () => void;
 }
 
 
@@ -43,15 +47,19 @@ export function FocusSessionScreen({
   trip,
   onEndSession,
   onMarkTasksComplete,
+  onDismiss,
   mode = '3d',
   onChangeMode,
+  onSessionTimerComplete,
 }: FocusSessionScreenProps) {
   type AmbientSoundKey = 'space-rumble' | 'rain-drops';
 
   const lists = useListStore((state) => state.lists);
   const [remainingSeconds, setRemainingSeconds] = useState(trip.duration);
   const [isPaused, setIsPaused] = useState(false);
+  const [mapZoomedOut, setMapZoomedOut] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [completionStep, setCompletionStep] = useState<1 | 2>(1);
   const [, setSessionFailed] = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [isMuted, setIsMuted] = useState(false);
@@ -67,6 +75,28 @@ export function FocusSessionScreen({
   const lastMissionProgressBucketRef = useRef(0);
   const distanceUnit = useUserStore((s) => s.distanceUnit);
   const user = useUserStore((s) => s.user);
+
+  // Share-after-session
+  const shareCardRef = useRef<View>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const { width: screenWidth } = useWindowDimensions();
+
+  const handleShare = async () => {
+    if (!shareCardRef.current || isSharing) return;
+    setIsSharing(true);
+    try {
+      const uri = await captureRef(shareCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      await Sharing.shareAsync(uri, { mimeType: 'image/png' });
+    } catch {
+      // user cancelled or share failed — silently ignore
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   // Load preferred ambient sound from storage
   useEffect(() => {
@@ -299,6 +329,7 @@ export function FocusSessionScreen({
         if (!sessionEnded) {
           setRemainingSeconds(0);
           setSessionEnded(true);
+          onSessionTimerComplete?.();
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         if (intervalRef.current) {
@@ -424,13 +455,13 @@ export function FocusSessionScreen({
     const elapsedSeconds = trip.duration - remainingSeconds;
     onMarkTasksComplete(completedIds);
     onEndSession(elapsedSeconds, completedIds);
-    router.back();
+    setCompletionStep(2);
   };
 
   const handleFinishWithoutMarking = () => {
     const elapsedSeconds = trip.duration - remainingSeconds;
     onEndSession(elapsedSeconds, []);
-    router.back();
+    onDismiss();
   };
 
   const [showGiveUpMenu, setShowGiveUpMenu] = useState(false);
@@ -457,6 +488,7 @@ export function FocusSessionScreen({
     setShowGiveUpMenu(false);
     setSessionFailed(true);
     setSessionEnded(true);
+    onSessionTimerComplete?.();
 
     // Stop any ambient sounds immediately to avoid audio glitches
     if (soundRef.current) {
@@ -516,6 +548,73 @@ export function FocusSessionScreen({
     const travelledDistanceKm = Math.floor(trip.distance_km * progress);
     const tasksCompletedCount = completedTaskIds.size;
     const totalTasks = tasks.length;
+
+    if (completionStep === 2) {
+      return (
+        <SafeAreaView className="flex-1 bg-black">
+          <TouchableOpacity
+            onPress={() => setCompletionStep(1)}
+            activeOpacity={0.7}
+            className="px-5 pt-2 pb-1"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <Animated.View
+            entering={FadeIn.duration(400)}
+            className="flex-1 items-center justify-center px-6"
+          >
+            <Animated.View entering={FadeInDown.delay(100)} className="items-center mb-8">
+              <Text className="text-white font-primary-bold text-2xl text-center mb-2">
+                Share your mission
+              </Text>
+              <Text className="text-gray-500 font-primary-medium text-sm text-center">
+                Show the world what you accomplished.
+              </Text>
+            </Animated.View>
+
+            {/* Card preview */}
+            <Animated.View entering={FadeInDown.delay(200)} style={{
+              transform: [{ scale: (screenWidth - 48) / SHARE_CARD_WIDTH }],
+              marginBottom: -((SHARE_CARD_WIDTH - (screenWidth - 48)) * 0.3),
+            }}>
+              <MissionShareCard
+                ref={shareCardRef}
+                trip={trip}
+                elapsedSeconds={trip.duration - remainingSeconds}
+                completedTasks={tasks.filter(t => completedTaskIds.has(t.id))}
+                totalTasks={tasks.length}
+                date={new Date()}
+              />
+            </Animated.View>
+
+            <Animated.View entering={FadeInDown.delay(300)} className="w-full gap-3 mt-6">
+              <TouchableOpacity
+                onPress={handleShare}
+                disabled={isSharing}
+                activeOpacity={0.85}
+                className="bg-white rounded-2xl py-4 items-center flex-row justify-center gap-2"
+                style={{ opacity: isSharing ? 0.6 : 1 }}
+              >
+                <Ionicons name="share-social-outline" size={20} color="#000" />
+                <Text className="font-primary-bold text-base text-black">
+                  {isSharing ? 'Preparing…' : 'Share'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={onDismiss}
+                activeOpacity={0.7}
+              >
+                <Text className="text-gray-300 font-primary-medium text-base text-center py-2">
+                  Skip
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </Animated.View>
+        </SafeAreaView>
+      );
+    }
 
     return (
       <SafeAreaView className="flex-1 bg-black">
@@ -690,29 +789,25 @@ export function FocusSessionScreen({
           <Animated.View entering={FadeInDown.delay(520)} className="w-full gap-3">
             <TouchableOpacity
               onPress={handleFinishAndMarkComplete}
-              disabled={completedTaskIds.size === 0}
-              className={`py-4 rounded-2xl items-center ${completedTaskIds.size > 0 ? 'bg-white' : 'bg-gray-400'
-                }`}
+              className="py-4 rounded-2xl items-center bg-white"
               activeOpacity={0.8}
             >
-              <Text
-                className={`font-primary-bold text-base text-black`}
-              >
+              <Text className="font-primary-bold text-base text-black">
                 Save journey & tasks
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleFinishWithoutMarking}
-              className="py-4 rounded-2xl items-center bg-gray-900/70 border border-gray-700"
               activeOpacity={0.8}
             >
-              <Text className="text-gray-300 font-primary-semibold text-base">
+              <Text className="text-gray-300 font-primary-medium text-base text-center py-2">
                 Skip
               </Text>
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
+
       </SafeAreaView>
     );
   }
@@ -723,7 +818,15 @@ export function FocusSessionScreen({
         {/* Background visual (3D or space map) */}
         {mode === 'map' ? (
           <View className="absolute inset-0">
-            <SpaceMapViewer />
+            <SpaceMapViewer
+              progress={
+                trip.duration > 0
+                  ? Math.min(1, Math.max(0, (trip.duration - remainingSeconds) / trip.duration))
+                  : 0
+              }
+              duration={trip.duration}
+              zoomedOut={mapZoomedOut}
+            />
           </View>
         ) : (
           <Animated.View
@@ -796,6 +899,18 @@ export function FocusSessionScreen({
               </View>
             </View>
           </Animated.View>
+
+          {/* Zoom toggle — bottom-right, only in map mode */}
+          {mode === 'map' && (
+            <TouchableOpacity
+              onPress={() => setMapZoomedOut(v => !v)}
+              activeOpacity={0.7}
+              className="absolute bottom-8 right-6 w-10 h-10 rounded-xl items-center justify-center"
+              style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
+            >
+              <Ionicons name={mapZoomedOut ? 'contract' : 'expand'} size={18} color="rgba(255,255,255,0.85)" />
+            </TouchableOpacity>
+          )}
 
           {/* Distance Remaining - Bottom Left */}
           <Animated.View

@@ -1,4 +1,4 @@
-import { FontAwesome, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
+import { AntDesign, FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
@@ -48,14 +48,21 @@ export default function TabLayout() {
         name="focus"
         options={{
           title: 'Focus',
-          tabBarIcon: ({ color }) => <FontAwesome5 name="bullseye" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="rocket-outline" size={25} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="cockpit"
+        name="stats"
         options={{
-          title: 'Cockpit',
-          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="tablet-dashboard" size={24} color={color} />,
+          title: 'Analytics',
+          tabBarIcon: ({ color }) => <AntDesign name="bar-chart" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color }) => <Ionicons name="settings-outline" size={24} color={color} />,
         }}
       />
     </Tabs>

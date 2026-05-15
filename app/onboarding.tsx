@@ -284,7 +284,7 @@ export default function Onboarding() {
                     {isLastSlide && (
                         <Animated.Image
                             source={require('../assets/icons/ios-light.png')}
-                            className="mt-5 rounded-lg"
+                            className="mt-5 rounded-xl"
                             style={{
                                 width: 60,
                                 height: 60,

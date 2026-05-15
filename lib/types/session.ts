@@ -9,6 +9,17 @@ export interface FocusSession {
   trip_name: string;
   distance_km: number;
   created_at: string;
+  completed_task_ids: string[] | null;
+}
+
+export interface ListFocusStat {
+  list_id: string;
+  title: string;
+  color?: string;
+  icon?: string;
+  tasksCompleted: number;
+  minutesFocused: number;
+  percentage: number;
 }
 
 export interface FocusStats {
@@ -18,7 +29,8 @@ export interface FocusStats {
   averageSessionLength: number;
   focusHealthScore: number;
   totalDistanceKm: number;
-   deepFocusDays: number;
+  deepFocusDays: number;
+  listBreakdown: ListFocusStat[];
 }
 
 export interface SessionCreateInput {
@@ -30,4 +42,5 @@ export interface SessionCreateInput {
   trip_id: string;
   trip_name: string;
   distance_km: number;
+  completed_task_ids: string[];
 }
