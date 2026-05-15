@@ -107,12 +107,32 @@ export default function RootLayout() {
   }, []);
 
   // Keep focus stats (and Habit widget) in sync whenever we have a logged-in user.
-  // This mirrors the fetch done in Focus/Cockpit, but from the root so the
+  // This mirrors the fetch done in Focus/Settings, but from the root so the
   // Habit widget updates even if the user never opens those tabs.
   useEffect(() => {
     if (!user?.id) return;
     fetchStats(user.id);
   }, [user?.id, fetchStats]);
+
+  // When the user has premium (whether self-purchased or admin-granted),
+  // show the premium onboarding once if they haven't seen it locally.
+  useEffect(() => {
+    if (!user?.id || !user?.is_premium) return;
+
+    const maybeShowPremiumIntro = async () => {
+      try {
+        const seen = await AsyncStorage.getItem('hasSeenPremiumIntro');
+        if (seen) return;
+
+        await AsyncStorage.setItem('hasSeenPremiumIntro', 'true');
+        router.push('/premium-intro' as any);
+      } catch (err) {
+        console.warn('Failed to check premium intro flag', err);
+      }
+    };
+
+    maybeShowPremiumIntro();
+  }, [user?.id, user?.is_premium]);
 
   // Configure Screen Time shield UI once (iOS only)
   useEffect(() => {

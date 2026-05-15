@@ -275,12 +275,10 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                         </View>
                       </View>
                       <View className="items-center mt-1">
-                        <Text className="text-[12px] text-center font-primary-semibold text-gray-100">
-                          {formatDuration(trip.duration)}
+                        <Text className="text-xs text-center font-primary-semibold text-gray-100">
+                         {trip.to}
                         </Text>
-                        <Text className="text-[8px] text-center pt-1 font-primary-semibold text-gray-100">
-                          {trip.to}
-                        </Text>
+                        
                       </View>
                     </View>
                   );
@@ -293,26 +291,34 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
 
           {/* Duration slider + Check-in */}
           <View className="mt-4">
-            
+
+            {/* Center pointer — sits above the slider, perfectly centred */}
+            <View className="items-center mb-1">
+              <View
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeftWidth: 7,
+                  borderRightWidth: 7,
+                  borderTopWidth: 10,
+                  borderStyle: 'solid',
+                  borderLeftColor: 'transparent',
+                  borderRightColor: 'transparent',
+                  borderTopColor: '#ffffff',
+                }}
+              />
+            </View>
+
             <View
-              className="relative py-3"
+              className="py-1"
               onLayout={(e) => {
                 setSliderWidth(e.nativeEvent.layout.width);
               }}
             >
-              {/* Center pointer */}
-              <View className={`flex justify-center items-center absolute -top-1 left-1/2 transform -translate-x-5 -translate-y-1`}>
-                <View
-                  style={{ width: 0, height: 0 }}
-                  className="border-l-[6px] border-r-[6px] border-t-[10px] border-l-transparent border-r-transparent border-t-white"
-                />
-              </View>
-
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 snapToInterval={SLIDER_ITEM_WIDTH}
-                snapToAlignment="center"
                 decelerationRate="fast"
                 onMomentumScrollEnd={handleSliderMomentumEnd}
                 contentContainerStyle={{
@@ -342,7 +348,7 @@ export function TaskSelectionModal({ bottomSheetRef, tasks, onStartSession }: Ta
                           isActive ? 'text-white' : 'text-gray-500'
                         }`}
                       >
-                        {Math.round(trip.duration / 60)}m
+                        {formatDuration(trip.duration)}
                       </Text>
                     </View>
                   );

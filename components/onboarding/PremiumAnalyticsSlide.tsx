@@ -44,7 +44,7 @@ export function PremiumAnalyticsSlide() {
             </View>
             <View className="mt-1">
               <Text className="text-white font-primary-bold text-lg">
-                
+
                  4023 km
               </Text>
               <Text className="text-gray-300 text-xs font-primary-medium mt-2">
@@ -108,10 +108,9 @@ export function PremiumAnalyticsSlide() {
         </View>
 
         <Text className="text-gray-400 font-primary-medium text-base mt-4 text-center">
-          Premium stats make it easy to see if you’re actually improving week after week.
+          Premium stats make it easy to see if you're actually improving week after week.
         </Text>
       </View>
     </View>
   );
 }
-

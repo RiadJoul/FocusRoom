@@ -17,14 +17,14 @@ import BottomSheet from '@gorhom/bottom-sheet';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as StoreReview from 'expo-store-review';
-import { NotificationsBottomSheet } from '@/components/cockpit/NotificationsBottomSheet';
-import { BlockAppsBottomSheet } from '@/components/cockpit/BlockingApps';
-import { WidgetBottomSheet } from '@/components/cockpit/WidgetBottomSheet';
+import { NotificationsBottomSheet } from '@/components/settings/NotificationsBottomSheet';
+import { BlockAppsBottomSheet } from '@/components/settings/BlockingApps';
+import { WidgetBottomSheet } from '@/components/settings/WidgetBottomSheet';
 import Constants from 'expo-constants';
-import { LiveActivityBottomSheet } from '@/components/cockpit/LiveActivityBottomSheet';
-import { StandbyBottomSheet } from '@/components/cockpit/StandByBottomSheet';
+import { LiveActivityBottomSheet } from '@/components/settings/LiveActivityBottomSheet';
+import { StandbyBottomSheet } from '@/components/settings/StandByBottomSheet';
 
-export default function Cockpit() {
+export default function Settings() {
   const user = useUserStore((state) => state.user);
   const clearUser = useUserStore((state) => state.clearUser);
   const stats = useSessionStore((state) => state.stats);
@@ -62,7 +62,7 @@ export default function Cockpit() {
     loadData();
 
     analytics.track(Events.SCREEN_VIEW, {
-      [Properties.SCREEN_NAME]: 'Cockpit'
+      [Properties.SCREEN_NAME]: 'Settings'
     });
   }, [user?.id]);
 
@@ -131,19 +131,19 @@ export default function Cockpit() {
             try {
               // Create lists
               // use light colors for good screenshot contrast in both light/dark mode and dont use similar colors
-              
-              const mathList = await addList('Math', 'calculator-outline', '#fce303');
-              const biologyList = await addList('Biology', 'leaf-outline', '#5fff59');
-              const workoutList = await addList('Workout', 'barbell-outline', '#59f9ff');
-              const codingList = await addList('Coding', 'code-slash-outline', '#534fe0');
-              const emailList = await addList('Emails', 'document-text-outline', '#e0ba4f');
-              const languagesList = await addList('Languages', 'language-outline', '#4fd4e0');
-              const journalingList = await addList('Journaling', 'newspaper-outline', '#4fe073');
-              const meditationList = await addList('Meditation', 'heart-circle-outline', '#21db4f');
-              const readingList = await addList('Reading', 'book-outline', '#f75c6e');
-              const schoolList = await addList('School', 'school-outline', '#ed8ff7');
-              const brainStormingList = await addList('Brainstorming', 'bulb-outline', '#ff5e5e');
-              
+
+              const mathList = await addList('Math', 'calculator-outline', '#F59E0B');
+              const biologyList = await addList('Biology', 'leaf-outline', '#22C55E');
+              const workoutList = await addList('Workout', 'barbell-outline', '#3B82F6');
+              const codingList = await addList('Coding', 'code-slash-outline', '#8B5CF6');
+              const emailList = await addList('Emails', 'mail-outline', '#EF4444');
+              const languagesList = await addList('Languages', 'language-outline', '#06B6D4');
+              const journalingList = await addList('Journaling', 'create-outline', '#F97316');
+              const meditationList = await addList('Meditation', 'heart-circle-outline', '#EC4899');
+              const readingList = await addList('Reading', 'book-outline', '#84CC16');
+              const schoolList = await addList('School', 'school-outline', '#6366F1');
+              const brainStormingList = await addList('Brainstorming', 'bulb-outline', '#14B8A6');
+
 
               const lists = [workoutList, mathList, biologyList, codingList, emailList, languagesList, journalingList, meditationList, readingList, schoolList, brainStormingList].filter(Boolean) as {
                 id: string;
@@ -151,28 +151,37 @@ export default function Cockpit() {
 
               if (lists.length === 0) return;
 
-              // Create tasks
-              await addTask(lists[0].id, 'Morning run - 5km', 'high');
+              // Create tasks and collect their IDs for use in seeded sessions
+              const t0 = await addTask(lists[0].id, 'Morning run before 8am lecture', 'high');
 
-              await addTask(lists[1].id, 'Complete algebra homework', 'high');
-              await addTask(lists[1].id, 'Study for geometry test', 'medium');
-              await addTask(lists[1].id, 'Review calculus notes', 'low');
+              const t1a = await addTask(lists[1].id, 'Complete Calculus problem set 5', 'high');
+              const t1b = await addTask(lists[1].id, 'Study for linear algebra midterm', 'medium');
+              const t1c = await addTask(lists[1].id, 'Review integration techniques', 'low');
 
-              await addTask(lists[2].id, 'Read chapter on cell structure', 'high');
-              await addTask(lists[2].id, 'Complete lab report on photosynthesis', 'medium');
-              await addTask(lists[2].id, 'Memorize anatomy terms', 'low');
+              const t2a = await addTask(lists[2].id, 'Read textbook chapter on cell division', 'high');
+              const t2b = await addTask(lists[2].id, 'Write lab report on osmosis experiment', 'medium');
+              const t2c = await addTask(lists[2].id, 'Study genetic inheritance for quiz', 'low');
 
-              await addTask(lists[3].id, 'Review JavaScript concepts', 'medium');
-              await addTask(lists[3].id, 'Practice coding challenges', 'low');
+              const t3a = await addTask(lists[3].id, 'Finish CS assignment - Binary Search Tree', 'high');
+              const t3b = await addTask(lists[3].id, 'Debug sorting algorithm implementation', 'medium');
 
-              await addTask(lists[4].id, 'Reply to client emails', 'high');
-              await addTask(lists[4].id, 'Organize inbox', 'medium');
-              await addTask(lists[4].id, 'Unsubscribe from newsletters', 'low');
+              const t4a = await addTask(lists[4].id, 'Email professor about office hours', 'high');
+              const t4b = await addTask(lists[4].id, 'Reply to study group messages', 'medium');
+              const t4c = await addTask(lists[4].id, 'Check financial aid portal', 'low');
 
-              await addTask(lists[5].id, 'Practice Spanish', 'high');
-              await addTask(lists[5].id, 'Review French grammar', 'medium');
-              await addTask(lists[5].id, 'Learn new vocabulary', 'low');
+              const t5a = await addTask(lists[5].id, 'Complete Spanish language lab assignment', 'high');
+              const t5b = await addTask(lists[5].id, 'Review French vocabulary for Friday test', 'medium');
+              const t5c = await addTask(lists[5].id, 'Practice German pronunciation drills', 'low');
 
+              // Pool of task ID arrays per list for demo sessions
+              const taskPools: string[][] = [
+                [t0].filter(Boolean).map((t) => t!.id),
+                [t1a, t1b, t1c].filter(Boolean).map((t) => t!.id),
+                [t2a, t2b, t2c].filter(Boolean).map((t) => t!.id),
+                [t3a, t3b].filter(Boolean).map((t) => t!.id),
+                [t4a, t4b, t4c].filter(Boolean).map((t) => t!.id),
+                [t5a, t5b, t5c].filter(Boolean).map((t) => t!.id),
+              ].filter((pool) => pool.length > 0);
 
               // Create focus sessions over the last 90 days for vivid stats / widgets.
               // IMPORTANT: we set created_at to the same day as started_at so that
@@ -200,21 +209,28 @@ export default function Cockpit() {
                   const durationSeconds = durationMinutes * 60;
                   const end = new Date(start.getTime() + durationSeconds * 1000);
 
+                  // Pick 1–2 random task pools and pull 1–2 tasks from each
+                  const pool = taskPools[Math.floor(Math.random() * taskPools.length)];
+                  const numTasks = 1 + Math.floor(Math.random() * Math.min(2, pool.length));
+                  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+                  const completedTaskIds = shuffled.slice(0, numTasks);
+
                   await supabase.from('focus_sessions').insert({
                     user_id: user.id,
                     started_at: start.toISOString(),
                     ended_at: end.toISOString(),
                     duration_seconds: durationSeconds,
-                    tasks_completed: 2 + Math.floor(Math.random() * 3),
+                    tasks_completed: completedTaskIds.length,
                     trip_id: 'earth-mars',
                     trip_name: 'Earth → Mars',
                     distance_km: 1_000 + Math.floor(Math.random() * 9_000),
                     created_at: start.toISOString(),
+                    completed_task_ids: completedTaskIds,
                   });
                 }
               }
 
-              // Refresh stats so cockpit + widgets reflect new data
+              // Refresh stats so settings + widgets reflect new data
               await fetchStats(user.id);
 
               Alert.alert('Done', 'Sample data added. You can now take screenshots.');
@@ -474,16 +490,25 @@ export default function Cockpit() {
       >
         {/* Header */}
         <View className="pt-6 pb-4">
-          <Text className="text-2xl font-primary-bold text-white">Cockpit</Text>
+          <Text className="text-2xl font-primary-bold text-white">Settings</Text>
         </View>
 
         {/* User Info Card */}
         <View className="pb-6">
           <View className="bg-card rounded-2xl px-6 py-3">
-            <View className="flex-row items-center mb-4">
+            <View className="flex-row items-center">
               {/* Avatar */}
               <View className="w-16 h-16 rounded-full bg-black items-center justify-center mr-4">
-                <FontAwesome5 name="user-astronaut" size={34} color={"white"} />
+                {
+                  // if user has uploaded an avatar, show it instead of the default icon
+                  user?.avatar_url ? (
+                    <Image
+                      source={{ uri: user.avatar_url }}
+                      style={{ width: 54, height: 54, borderRadius: 999 }}
+                    />
+                  ) :
+                    <FontAwesome5 name="user-astronaut" size={34} color={"white"} />
+                }
               </View>
               {/* User Details */}
               <View className="flex-1">
@@ -557,26 +582,11 @@ export default function Cockpit() {
               </View>
             </View>
 
-            {/* Stats Row */}
-            <View className="flex-row gap-3">
-              <StatCard
-                value={isLoading ? '...' : completedTasks}
-                label="Tasks Done"
-                icon={<FontAwesome5 name="tasks" size={24} color="white" />}
-              />
-              <StatCard
-                value={isLoading ? '...' : dayStreak}
-                label="Day Streak"
-                icon={<MaterialCommunityIcons name="fire" size={24} color={`${dayStreak >= 7 ? 'orange' : 'white'}`} />}
-              />
-              <StatCard
-                value={isLoading ? '...' : `${successRate}%`}
-                label="Success"
-                icon={<AntDesign name="check-square" size={24} color="white" />}
-              />
-            </View>
+            
           </View>
         </View>
+
+
 
 
         {/* Premium Upsell Banner */}
@@ -613,7 +623,7 @@ export default function Cockpit() {
 
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => presentPaywall('cockpit_upsell_banner')}
+              onPress={() => presentPaywall('settings_upsell_banner')}
               className="bg-white"
               style={{
                 borderRadius: 999,
@@ -1047,19 +1057,19 @@ export default function Cockpit() {
       <LiveActivityBottomSheet
         bottomSheetRef={liveActivitySheetRef}
         isPremium={!!user?.is_premium}
-        onPressUpgrade={() => presentPaywall("cockpit_live_activity_paywall")}
+        onPressUpgrade={() => presentPaywall("settings_live_activity_paywall")}
       />
 
       <WidgetBottomSheet
         bottomSheetRef={widgetSheetRef}
         isPremium={!!user?.is_premium}
-        onPressUpgrade={() => presentPaywall("cockpit_widget_paywall")}
+        onPressUpgrade={() => presentPaywall("settings_widget_paywall")}
       />
 
       <StandbyBottomSheet
         bottomSheetRef={standbySheetRef}
         isPremium={!!user?.is_premium}
-        onPressUpgrade={() => presentPaywall("cockpit_standby_paywall")}
+        onPressUpgrade={() => presentPaywall("settings_standby_paywall")}
       />
 
     </SafeAreaView>

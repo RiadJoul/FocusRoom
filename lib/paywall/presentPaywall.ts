@@ -7,7 +7,7 @@ import { router } from 'expo-router';
 
 type PaywallSource =
   | 'root_layout_trial'
-  | 'cockpit_screen'
+  | 'settings_screen'
   | 'floating_recurring_button'
   | 'task_selection_modal'
   | string;
@@ -63,6 +63,7 @@ export async function presentPaywallOnce(
 
         // After a successful purchase, show the premium intro
         try {
+          await AsyncStorage.setItem('hasSeenPremiumIntro', 'true');
           router.push('/premium-intro' as any);
         } catch (err) {
           console.warn('Failed to navigate to premium intro after purchase', err);

@@ -8,6 +8,8 @@ import { NotificationTimeSlide } from '@/components/onboarding/NotificationTimeS
 import { TicketIntroSlide } from '@/components/onboarding/TicketIntroSlide';
 import { SpaceMapSlide } from '@/components/onboarding/SpaceMapSlide';
 import { BlockingAppsSlide } from '@/components/onboarding/BlockingAppsSlide';
+import { FreeTrialSlide } from '@/components/onboarding/FreeTrialSlide';
+import { TrialReminderSlide } from '@/components/onboarding/TrialReminderSlide';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/lib/stores/userStore';
@@ -18,7 +20,7 @@ import { analytics, Events } from '@/lib/analytics';
 import { presentPaywallOnce } from '@/lib/paywall/presentPaywall';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const slides = [
+const BASE_SLIDES = [
   {
     key: 'spaceRoute',
     title: 'Your focus journey',
@@ -42,21 +44,34 @@ const slides = [
   {
     key: 'notifications',
     title: 'Pick your daily \n focus time 🔔',
-    subtitle: 'We’ll nudge you once a day \n when it’s time to lock in.',
+    subtitle: "We'll nudge you once a day \n when it's time to lock in.",
   },
   {
     key: 'blockingApps',
     title: 'Shield your focus',
     subtitle: 'Let FocusRoom block distracting apps \n while you work.',
   },
-
 ] as const;
 
-type SlideKey = (typeof slides)[number]['key'];
+const TRIAL_SLIDES = [
+  {
+    key: 'freeTrial',
+    title: 'We want you to try \n First Class for free ',
+    subtitle: '',
+  },
+  {
+    key: 'trialReminder',
+    title: "We've got your back",
+    subtitle: "We'll remind you 1 day before your trial ends.",
+  },
+] as const;
+
+type SlideKey = (typeof BASE_SLIDES)[number]['key'] | (typeof TRIAL_SLIDES)[number]['key'];
 
 export default function PostLoginOnboarding() {
   const router = useRouter();
   const user = useUserStore((state) => state.user);
+  const slides = user?.is_premium ? BASE_SLIDES : [...BASE_SLIDES, ...TRIAL_SLIDES];
   const [index, setIndex] = useState(0);
   const [buttonEnabled, setButtonEnabled] = useState(false);
   const [notificationHour, setNotificationHour] = useState(9);
@@ -67,7 +82,7 @@ export default function PostLoginOnboarding() {
 
   useEffect(() => {
     setButtonEnabled(false);
-    const timeout = setTimeout(() => setButtonEnabled(true), 900);
+    const timeout = setTimeout(() => setButtonEnabled(true), 200);
     return () => clearTimeout(timeout);
   }, [index]);
 
@@ -177,7 +192,7 @@ export default function PostLoginOnboarding() {
         } else {
           Alert.alert(
             'Notifications off',
-            'You can turn on your daily reminder later from the Cockpit screen.',
+            'You can turn on your daily reminder later from the Settings screen.',
           );
           analytics
             .track(Events.POST_LOGIN_ONBOARDING_ACTION, {
@@ -198,7 +213,7 @@ export default function PostLoginOnboarding() {
     }
 
     // On blocking apps slide, request Screen Time / Device Activity access and
-    // enable the global "block apps" toggle so Cockpit picks it up.
+    // enable the global "block apps" toggle so Settings picks it up.
     if (currentKey === 'blockingApps') {
       if (Platform.OS === 'ios') {
         try {
@@ -214,7 +229,7 @@ export default function PostLoginOnboarding() {
           console.warn('Error requesting Screen Time authorization from onboarding', e);
           Alert.alert(
             'Screen Time Access Needed',
-            'We could not request Screen Time access right now. You can enable it later from the Cockpit.',
+            'We could not request Screen Time access right now. You can enable it later from the Settings screen.',
           );
           analytics
             .track(Events.POST_LOGIN_ONBOARDING_ACTION, {
@@ -323,6 +338,12 @@ export default function PostLoginOnboarding() {
       );
     }
 
+    if (key === 'freeTrial') {
+      return <FreeTrialSlide />;
+    }
+    if (key === 'trialReminder') {
+      return <TrialReminderSlide />;
+    }
     // stats slide
     return <TicketIntroSlide />;
   };
@@ -404,18 +425,49 @@ export default function PostLoginOnboarding() {
             </TouchableOpacity>
           </>
 
+        ) : current.key === 'trialReminder' ? (
+          <>
+            <TouchableOpacity
+              onPress={async () => {
+                await AsyncStorage.setItem('hasSeenPostLoginOnboarding', 'true');
+                if (user?.id) {
+                  const now = Date.now();
+                  const didPurchase = await presentPaywallOnce({ userId: user.id, source: 'trial_reminder_onboarding' });
+                  if (!didPurchase) {
+                    await AsyncStorage.setItem('paywall_last_shown_root_layout', String(now));
+                  }
+                }
+                router.replace('/(tabs)' as any);
+              }}
+              activeOpacity={0.85}
+              disabled={!buttonEnabled}
+              className={`py-4 rounded-2xl items-center ${buttonEnabled ? 'bg-white' : 'bg-white/20'}`}
+            >
+              <Text className={`font-primary-bold text-xl ${buttonEnabled ? 'text-black' : 'text-gray-400'}`}>
+                Try for $0.00
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={async () => {
+                await AsyncStorage.setItem('hasSeenPostLoginOnboarding', 'true');
+                router.replace('/(tabs)' as any);
+              }}
+              activeOpacity={0.8}
+              className="mt-5 items-center"
+            >
+              <Text className="text-gray-500 font-primary-medium text-base">Skip for now</Text>
+            </TouchableOpacity>
+          </>
         ) : (
           <>
-            {/* Primary Next / Start button */}
             <TouchableOpacity
               onPress={handleNext}
               activeOpacity={0.85}
               disabled={!buttonEnabled}
               className={`py-4 rounded-2xl items-center ${buttonEnabled ? 'bg-white' : 'bg-white/20'}`}
             >
-              <Text
-                className={`font-primary-bold text-xl ${buttonEnabled ? 'text-black' : 'text-gray-400'}`}
-              >
+              <Text className={`font-primary-bold text-xl ${buttonEnabled ? 'text-black' : 'text-gray-400'}`}>
                 {index < slides.length - 1 ? 'Next' : 'Start focusing'}
               </Text>
             </TouchableOpacity>

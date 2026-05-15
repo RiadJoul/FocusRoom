@@ -1,8 +1,10 @@
 import { supabase } from '@/lib/supabase';
-import { FocusSession, FocusStats, SessionCreateInput } from '@/lib/types/session';
+import { FocusSession, FocusStats, ListFocusStat, SessionCreateInput } from '@/lib/types/session';
 import { create } from 'zustand';
 import { updateHabitSnapshot } from '@/lib/missionState';
 import { useUserStore } from './userStore';
+import { useTaskStore } from './taskStore';
+import { useListStore } from './listStore';
 
 interface SessionState {
   sessions: FocusSession[];
@@ -44,7 +46,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const { data, error } = await supabase
         .from('focus_sessions')
-        .select('duration_seconds, tasks_completed, distance_km, created_at')
+        .select('duration_seconds, tasks_completed, distance_km, created_at, completed_task_ids')
         .eq('user_id', userId);
 
       if (error) throw error;
@@ -115,6 +117,47 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Calculate focus health score
       const focusHealthScore = await get().calculateFocusHealthScore(userId);
 
+      // Compute per-list task breakdown for the last 90 days
+      const { tasks: allTasks } = useTaskStore.getState();
+      const { lists } = useListStore.getState();
+      const taskToListId = new Map(allTasks.map((t) => [t.id, t.list_id]));
+      const listIdToInfo = new Map(lists.map((l) => [l.id, l]));
+
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      const listTaskCounts = new Map<string, number>();
+      const listMinutes = new Map<string, number>();
+      sessions.forEach((s: any) => {
+        if (s.created_at && new Date(s.created_at) < ninetyDaysAgo) return;
+        const ids: string[] = s.completed_task_ids || [];
+        if (ids.length === 0) return;
+        const sessionMinutes = s.duration_seconds / 60;
+        const minutesPerTask = sessionMinutes / ids.length;
+        ids.forEach((taskId) => {
+          const listId = taskToListId.get(taskId);
+          if (listId) {
+            listTaskCounts.set(listId, (listTaskCounts.get(listId) ?? 0) + 1);
+            listMinutes.set(listId, (listMinutes.get(listId) ?? 0) + minutesPerTask);
+          }
+        });
+      });
+      const totalListMinutes = Array.from(listMinutes.values()).reduce((a, b) => a + b, 0);
+      const listBreakdown: ListFocusStat[] = Array.from(listMinutes.entries())
+        .map(([list_id, minutes]) => {
+          const info = listIdToInfo.get(list_id);
+          return {
+            list_id,
+            title: info?.title ?? 'Unknown',
+            color: info?.color,
+            icon: info?.icon,
+            tasksCompleted: listTaskCounts.get(list_id) ?? 0,
+            minutesFocused: Math.round(minutes),
+            percentage: totalListMinutes > 0 ? Math.round((minutes / totalListMinutes) * 100) : 0,
+          };
+        })
+        .sort((a, b) => b.minutesFocused - a.minutesFocused);
+
       set({
         stats: {
           totalSessions,
@@ -124,6 +167,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           focusHealthScore,
           totalDistanceKm: Math.floor(totalDistanceKm),
           deepFocusDays,
+          listBreakdown,
         },
         isLoading: false,
       });

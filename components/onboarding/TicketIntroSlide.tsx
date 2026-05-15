@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BoardingPassCard } from '@/components/shared/BoardingPassCard';
 
 export function TicketIntroSlide() {
   const frontAnim = useRef(new Animated.Value(40)).current;
@@ -45,7 +46,7 @@ export function TicketIntroSlide() {
   return (
     <View className="flex-1 items-center justify-center">
       <View className="w-full items-center mb-10">
-        {/* Back ticket */}
+        {/* Back ticket — completed past session, simplified */}
         <Animated.View
           style={{
             opacity: backOpacity,
@@ -78,84 +79,22 @@ export function TicketIntroSlide() {
           </View>
         </Animated.View>
 
-        {/* Front / main ticket */}
+        {/* Front ticket */}
         <Animated.View
           style={{
             opacity: frontOpacity,
-            transform: [
-              { translateY: frontAnim },
-            ],
+            transform: [{ translateY: frontAnim }],
           }}
           className="w-full"
         >
-          <View
-            className="bg-white rounded-3xl px-6 pt-5 pb-6 shadow-2xl shadow-black/60"
-          >
-            {/* Header */}
-            <View className="flex-row items-center justify-between mb-4">
-              <View>
-                <Text className="text-[10px] text-gray-500 tracking-[2px] font-primary-medium">
-                  FOCUSROOM AIRWAYS
-                </Text>
-                <Text className="text-base font-primary-bold text-black">BOARDING PASS</Text>
-              </View>
-              <View className="px-3 py-2 rounded-lg bg-black">
-                <Text className="text-[10px] text-white font-primary-bold tracking-[1.5px]">
-                  FIRST CLASS
-                </Text>
-              </View>
-            </View>
-
-            {/* Route row */}
-            <View className="flex-row items-center justify-between mb-6">
-              <View>
-                <Text className="text-xs text-gray-500 mb-1">FROM</Text>
-                <Text className="text-3xl font-primary-bold text-black">FOC</Text>
-                <Text className="text-xs text-gray-500">Your World</Text>
-              </View>
-              <View className="items-center">
-                <View className="flex-row items-center mb-1">
-                  <View className="w-2 h-2 rounded-full bg-black mr-1.5" />
-                  <View className="w-14 h-[1px] bg-gray-400" />
-                  <View className="w-2 h-2 rounded-full bg-black ml-1.5" />
-                </View>
-                <Text className="text-xs text-gray-500">45m of deep focus</Text>
-              </View>
-              <View className="items-end">
-                <Text className="text-xs text-gray-500 mb-1">TO</Text>
-                <Text className="text-3xl font-primary-bold text-black">FLW</Text>
-                <Text className="text-xs text-gray-500">Flow State</Text>
-              </View>
-            </View>
-
-            {/* Dotted divider */}
-            <View className="flex-row justify-between items-center mb-4">
-              <View className="w-3 h-3 rounded-full bg-black/5" />
-              <View className="flex-1 flex-row justify-between mx-2">
-                {Array.from({ length: 24 }).map((_, idx) => (
-                  <View key={idx} className="w-2 h-[1px] bg-gray-300" />
-                ))}
-              </View>
-              <View className="w-3 h-3 rounded-full bg-black/5" />
-            </View>
-
-            {/* Fake barcode strip */}
-            <View className="flex-row items-end">
-              <View className="flex-row flex-1 h-10">
-                {Array.from({ length: 36 }).map((_, idx) => (
-                  <View
-                    // eslint-disable-next-line react/no-array-index-key
-                    key={idx}
-                    style={{
-                      flex: 1,
-                      backgroundColor: idx % 2 === 0 ? '#000' : '#fff',
-                      marginHorizontal: idx % 3 === 0 ? 2 : 1,
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-          </View>
+          <BoardingPassCard
+            from="FOC"
+            fromLabel="Your World"
+            to="FLW"
+            toLabel="Flow State"
+            durationLabel="45m of deep focus"
+            isPremium
+          />
         </Animated.View>
       </View>
 
@@ -192,4 +131,3 @@ export function TicketIntroSlide() {
     </View>
   );
 }
-
